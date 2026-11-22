@@ -1,0 +1,1022 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <title>SlipFlow — Web Application Architecture &amp; User Manual</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #e5e9e7;
+      color: #10201a;
+      font-family: "IBM Plex Sans Thai", sans-serif;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .mono {
+      font-family: "JetBrains Mono", monospace;
+    }
+    .page {
+      width: 210mm;
+      height: 297mm;
+      background: #ffffff;
+      margin: 0 auto;
+      padding: 14mm 15mm 12mm 15mm;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      page-break-after: always;
+      break-after: page;
+      overflow: hidden;
+    }
+    .page:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    @media screen {
+      .page {
+        margin: 16px auto;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+      }
+    }
+
+    /* Top bar & Footer */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #0d6b4e;
+      margin-bottom: 12px;
+    }
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 13px;
+      color: #0f241d;
+    }
+    .topbar-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      background: #0d6b4e;
+    }
+    .topbar-meta {
+      font-size: 10.5px;
+      color: #52645d;
+      font-weight: 500;
+    }
+    .page-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 8px;
+      border-top: 1px solid #dce4e0;
+      font-size: 10px;
+      color: #64756e;
+    }
+
+    /* Hero Banner (Page 1) */
+    .hero-banner {
+      background: linear-gradient(135deg, #0f241d 0%, #12382b 65%, #0d6b4e 100%);
+      color: #ffffff;
+      border-radius: 14px;
+      padding: 18px 22px;
+      margin-bottom: 14px;
+    }
+    .hero-tag {
+      display: inline-block;
+      background: rgba(74, 222, 128, 0.18);
+      color: #86efac;
+      border: 1px solid rgba(134, 239, 172, 0.35);
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 999px;
+      margin-bottom: 6px;
+    }
+    .hero-title {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      line-height: 1.25;
+    }
+    .hero-sub {
+      margin: 6px 0 12px 0;
+      font-size: 12px;
+      color: #cfe7dc;
+      line-height: 1.5;
+    }
+    .hero-url-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 10.5px;
+    }
+    .hero-url-label {
+      color: #9bc1b2;
+      font-size: 9.5px;
+    }
+    .hero-url-val {
+      color: #ffffff;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    /* Section Headings (ClickIT Style) */
+    .sec-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 8px 0;
+    }
+    .sec-num {
+      background: #0d6b4e;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 11px;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .sec-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f241d;
+    }
+    .sec-desc {
+      margin: 0 0 10px 0;
+      font-size: 11.5px;
+      color: #42544d;
+    }
+
+    /* Cards & Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .card {
+      background: #f8faf9;
+      border: 1px solid #dce4e0;
+      border-radius: 11px;
+      padding: 10px 12px;
+    }
+    .card-white {
+      background: #ffffff;
+      border: 1px solid #dce4e0;
+      border-radius: 11px;
+      padding: 10px 12px;
+    }
+    .card-title {
+      margin: 0 0 4px 0;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #0f241d;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .card p, .card ul, .card ol {
+      margin: 0;
+      font-size: 11px;
+      color: #42544d;
+    }
+    .card ul, .card ol {
+      padding-left: 16px;
+    }
+    .card li {
+      margin-bottom: 3px;
+    }
+
+    .diagram-frame {
+      background: #f8faf9;
+      border: 1.5px solid #cbd8d1;
+      border-radius: 12px;
+      padding: 10px;
+      margin-bottom: 12px;
+    }
+    .diagram-caption {
+      text-align: center;
+      font-size: 10px;
+      color: #52645d;
+      margin-top: 4px;
+      font-weight: 500;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 1.5px 7px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .badge-emerald { background: #e8f5f0; color: #0d6b4e; }
+    .badge-line { background: #e5f9ed; color: #059440; }
+    .badge-fb { background: #e6f2ff; color: #0064c8; }
+    .badge-amber { background: #fef3c7; color: #92400e; }
+    .badge-red { background: #fdecec; color: #c82829; }
+    .badge-gray { background: #eef1f0; color: #52645d; }
+
+    /* Tables */
+    table.clean-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    table.clean-table th {
+      background: #0f241d;
+      color: #ffffff;
+      padding: 6px 9px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 10.5px;
+    }
+    table.clean-table th:first-child { border-top-left-radius: 7px; }
+    table.clean-table th:last-child { border-top-right-radius: 7px; }
+    table.clean-table td {
+      padding: 6px 9px;
+      border-bottom: 1px solid #e3e8e5;
+      color: #10201a;
+      vertical-align: top;
+    }
+    table.clean-table tr:nth-child(even) td {
+      background: #f8faf9;
+    }
+
+    /* Callout box */
+    .callout {
+      border-left: 4px solid #0d6b4e;
+      background: #eef7f3;
+      border-radius: 0 9px 9px 0;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: #10201a;
+    }
+    .callout-amber {
+      border-left: 4px solid #d97706;
+      background: #fef8ee;
+    }
+
+    /* Step list */
+    .step-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 7px 10px;
+      border: 1px solid #e3e8e5;
+      border-radius: 9px;
+      background: #ffffff;
+      margin-bottom: 6px;
+    }
+    .step-circle {
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: #0d6b4e;
+      color: #fff;
+      font-weight: 700;
+      font-size: 10.5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== PAGE 1: OVERVIEW & HIGH-LEVEL ARCHITECTURE ==================== -->
+  <section class="page">
+    <div>
+      <header class="topbar">
+        <div class="topbar-brand">
+          <span class="topbar-dot"></span>
+          <span>SlipFlow Architecture &amp; Operations Guide (v2.0)</span>
+        </div>
+        <div class="topbar-meta">Web Application Architecture · Multi-Shop Edition</div>
+      </header>
+
+      <div class="hero-banner">
+        <span class="hero-tag">CLOUD-NATIVE EDGE ARCHITECTURE · MULTI-TENANT</span>
+        <h1 class="hero-title">คู่มือการใช้งานและสถาปัตยกรรมระบบ SlipFlow</h1>
+        <p class="hero-sub">
+          ระบบตรวจสลิปโอนเงินอัตโนมัติและสมุดบัญชีรายรับสำหรับผู้ขายออนไลน์ รองรับหลายร้านค้า (Multi-Shop) และผู้ดูแลระบบรวม (Super Admin) เชื่อมต่อ LINE OA, Facebook Messenger และ Chrome Extension บนโครงสร้าง Cloudflare Workers + D1
+        </p>
+        <div class="hero-url-strip">
+          <div>
+            <div class="hero-url-label">Production Webapp Dashboard</div>
+            <div class="hero-url-val mono">https://slipflow-seller-dashboard.xenz-wora.workers.dev</div>
+          </div>
+          <div>
+            <div class="hero-url-label">AI OCR &amp; QR Verification Engine</div>
+            <div class="hero-url-val mono">https://my-slip-reader.onrender.com</div>
+          </div>
+          <div>
+            <div class="hero-url-label">GitHub Source Repository</div>
+            <div class="hero-url-val mono">github.com/Xenz2207/slip-reader-plug-in</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-head">
+        <span class="sec-num">1</span>
+        <h2 class="sec-title">สถาปัตยกรรมภาพรวม (High-Level Web Application Architecture)</h2>
+      </div>
+      <p class="sec-desc">
+        ออกแบบตามแนวทาง Cloud-Native Web Application Architecture โดยแยกชั้นการเชื่อมต่อของผู้ใช้ (Client &amp; Messaging Channels), ชั้นประมวลผลที่ Edge (Application Layer), ชั้น AI OCR ตรวจสลิป และชั้นฐานข้อมูลแยกตามร้านค้า (Multi-Tenant Data Layer)
+      </p>
+
+      <!-- DIAGRAM 1: CLICKIT-STYLE END-TO-END ARCHITECTURE SVG -->
+      <div class="diagram-frame">
+        <svg viewBox="0 0 820 265" width="100%" height="235" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#0d6b4e" />
+            </marker>
+            <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#0284c7" />
+            </marker>
+          </defs>
+
+          <!-- Column 1: Client & Chat Channels -->
+          <rect x="8" y="10" width="180" height="245" rx="10" fill="#eef5f1" stroke="#b9d3c6" stroke-width="1.5" />
+          <text x="98" y="29" text-anchor="middle" font-size="11" font-weight="700" fill="#0f241d">1. CLIENT &amp; CHAT CHANNELS</text>
+
+          <rect x="20" y="42" width="156" height="44" rx="7" fill="#ffffff" stroke="#06c755" stroke-width="1.5" />
+          <circle cx="35" cy="64" r="6" fill="#06c755" />
+          <text x="48" y="60" font-size="10.5" font-weight="700" fill="#10201a">LINE Official Account</text>
+          <text x="48" y="74" font-size="9" fill="#52645d">ส่งสลิปผ่านมือถือ 24 ชม.</text>
+
+          <rect x="20" y="96" width="156" height="44" rx="7" fill="#ffffff" stroke="#0084ff" stroke-width="1.5" />
+          <circle cx="35" cy="118" r="6" fill="#0084ff" />
+          <text x="48" y="114" font-size="10.5" font-weight="700" fill="#10201a">Facebook Messenger</text>
+          <text x="48" y="128" font-size="9" fill="#52645d">แชตเพจ / Meta Business</text>
+
+          <rect x="20" y="150" width="156" height="44" rx="7" fill="#ffffff" stroke="#0d6b4e" stroke-width="1.5" />
+          <circle cx="35" cy="172" r="6" fill="#0d6b4e" />
+          <text x="48" y="168" font-size="10.5" font-weight="700" fill="#10201a">Chrome Extension (MV3)</text>
+          <text x="48" y="182" font-size="9" fill="#52645d">chat.line.biz &amp; FB Inbox</text>
+
+          <rect x="20" y="204" width="156" height="40" rx="7" fill="#ffffff" stroke="#0f241d" stroke-width="1.5" />
+          <circle cx="35" cy="224" r="6" fill="#0f241d" />
+          <text x="48" y="220" font-size="10.5" font-weight="700" fill="#10201a">Seller &amp; Admin Web SPA</text>
+          <text x="48" y="233" font-size="9" fill="#52645d">React 19 + Vite (มือถือ/คอม)</text>
+
+          <!-- Arrows Col 1 -> Col 2 -->
+          <line x1="188" y1="64" x2="224" y2="64" stroke="#0d6b4e" stroke-width="1.8" marker-end="url(#arrow)" />
+          <line x1="188" y1="118" x2="224" y2="118" stroke="#0d6b4e" stroke-width="1.8" marker-end="url(#arrow)" />
+          <line x1="188" y1="172" x2="224" y2="172" stroke="#0d6b4e" stroke-width="1.8" marker-end="url(#arrow)" />
+          <line x1="188" y1="224" x2="224" y2="224" stroke="#0d6b4e" stroke-width="1.8" marker-end="url(#arrow)" />
+
+          <!-- Column 2: Cloudflare Edge Worker -->
+          <rect x="228" y="10" width="205" height="245" rx="10" fill="#0f241d" />
+          <text x="330" y="29" text-anchor="middle" font-size="11" font-weight="700" fill="#86efac">2. CLOUDFLARE EDGE WORKER</text>
+
+          <rect x="240" y="42" width="181" height="46" rx="7" fill="#17382d" stroke="#2d5e4d" />
+          <text x="330" y="60" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">Webhook &amp; Auth Gateway (Hono)</text>
+          <text x="330" y="75" text-anchor="middle" font-size="9" fill="#b8d4c9">HMAC-SHA256 · PBKDF2 · X-API-Key</text>
+
+          <rect x="240" y="98" width="181" height="46" rx="7" fill="#17382d" stroke="#2d5e4d" />
+          <text x="330" y="116" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">Async Background Queue</text>
+          <text x="330" y="131" text-anchor="middle" font-size="9" fill="#b8d4c9">ctx.waitUntil() ตอบ 200 OK ใน &lt;10ms</text>
+
+          <rect x="240" y="154" width="181" height="88" rx="7" fill="#0d6b4e" stroke="#4ade80" stroke-width="1.2" />
+          <text x="330" y="173" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">Seller Protection Engine (4 ด่าน)</text>
+          <text x="252" y="190" font-size="9.2" fill="#e2f7ee">✓ ด่าน 1: ตรวจ QR TLV &amp; ค่า CRC16</text>
+          <text x="252" y="205" font-size="9.2" fill="#e2f7ee">✓ ด่าน 2: เช็กสลิปซ้ำ (transRef ในร้าน)</text>
+          <text x="252" y="220" font-size="9.2" fill="#e2f7ee">✓ ด่าน 3: เทียบบัญชีรับเงินร้าน (Whitelist)</text>
+          <text x="252" y="235" font-size="9.2" fill="#e2f7ee">✓ ด่าน 4: ตรวจยอดเงิน &gt; 0 &amp; ขั้นต่ำ</text>
+
+          <!-- Arrows Col 2 <-> Col 3 -->
+          <line x1="433" y1="85" x2="472" y2="85" stroke="#0284c7" stroke-width="1.8" marker-end="url(#arrow-blue)" />
+          <line x1="472" y1="105" x2="433" y2="105" stroke="#0284c7" stroke-width="1.8" marker-end="url(#arrow-blue)" />
+          <line x1="433" y1="198" x2="472" y2="198" stroke="#0d6b4e" stroke-width="1.8" marker-end="url(#arrow)" />
+
+          <!-- Column 3: External AI OCR + Cloudflare D1 Database -->
+          <rect x="476" y="10" width="336" height="118" rx="10" fill="#f0f7ff" stroke="#bae0fd" stroke-width="1.5" />
+          <text x="644" y="29" text-anchor="middle" font-size="11" font-weight="700" fill="#0369a1">3. AI SLIP VERIFICATION ENGINE (RENDER API)</text>
+          <rect x="490" y="40" width="308" height="76" rx="8" fill="#ffffff" stroke="#93c5fd" />
+          <text x="644" y="58" text-anchor="middle" font-size="10.5" font-weight="700" fill="#10201a">POST https://my-slip-reader.onrender.com/api/verify-slip</text>
+          <text x="644" y="75" text-anchor="middle" font-size="9.5" fill="#42544d">• ถอดรหัส Mini QR มาตรฐานธนาคารแห่งประเทศไทย (TLV Tags + CRC)</text>
+          <text x="644" y="90" text-anchor="middle" font-size="9.5" fill="#42544d">• โมเดล iapp/OpenThai2.0-OCR-Text ดึงยอดเงิน วันเวลา และชื่อบัญชี</text>
+          <text x="644" y="105" text-anchor="middle" font-size="9.5" fill="#0369a1" font-weight="600">• ระบบ Retry อัตโนมัติ + Timeout 65s รองรับ Render Cold-Start</text>
+
+          <rect x="476" y="138" width="336" height="117" rx="10" fill="#eef7f3" stroke="#b7dfd0" stroke-width="1.5" />
+          <text x="644" y="157" text-anchor="middle" font-size="11" font-weight="700" fill="#0d6b4e">4. CLOUDFLARE D1 DATABASE (SQLite APAC · MULTI-SHOP)</text>
+          <rect x="490" y="167" width="98" height="76" rx="7" fill="#ffffff" stroke="#b7dfd0" />
+          <text x="539" y="185" text-anchor="middle" font-size="10" font-weight="700" fill="#0f241d">Auth &amp; Tenants</text>
+          <text x="539" y="201" text-anchor="middle" font-size="9" fill="#52645d">• users (ADMIN/SELLER)</text>
+          <text x="539" y="215" text-anchor="middle" font-size="9" fill="#52645d">• sessions (Bearer)</text>
+          <text x="539" y="229" text-anchor="middle" font-size="9" fill="#52645d">• shops (webhookSlug)</text>
+
+          <rect x="595" y="167" width="102" height="76" rx="7" fill="#ffffff" stroke="#b7dfd0" />
+          <text x="646" y="185" text-anchor="middle" font-size="10" font-weight="700" fill="#0f241d">Shop Config</text>
+          <text x="646" y="201" text-anchor="middle" font-size="9" fill="#52645d">• shop_settings</text>
+          <text x="646" y="215" text-anchor="middle" font-size="9" fill="#52645d">• seller_accounts</text>
+          <text x="646" y="229" text-anchor="middle" font-size="9" fill="#52645d">• categories</text>
+
+          <rect x="704" y="167" width="94" height="76" rx="7" fill="#ffffff" stroke="#b7dfd0" />
+          <text x="751" y="185" text-anchor="middle" font-size="10" font-weight="700" fill="#0f241d">Ledger &amp; Logs</text>
+          <text x="751" y="201" text-anchor="middle" font-size="9" fill="#52645d">• transactions</text>
+          <text x="751" y="215" text-anchor="middle" font-size="9" fill="#52645d">• webhook_logs</text>
+          <text x="751" y="229" text-anchor="middle" font-size="9" fill="#0d6b4e" font-weight="700">แยกตาม shop_id</text>
+        </svg>
+        <div class="diagram-caption">
+          แผนภาพที่ 1: โครงสร้างการทำงานตั้งแต่ลูกค้าส่งรูปสลิป จนถึงการตรวจ AI OCR, กฎป้องกันผู้ขาย 4 ด่าน และการบันทึกลงฐานข้อมูล D1 แยกตามร้านค้า
+        </div>
+      </div>
+
+      <!-- 4 Core Pillar Cards -->
+      <div class="grid-4">
+        <div class="card">
+          <h3 class="card-title">⚡ Edge Serverless</h3>
+          <p>รันบน Cloudflare Workers (Startup ~4ms) ไม่หลับ ไม่เสียเวลารอปลุกเซิร์ฟเวอร์ฝั่งรับ Webhook</p>
+        </div>
+        <div class="card">
+          <h3 class="card-title">🏪 Multi-Shop 100%</h3>
+          <p>แยกข้อมูลทุกตารางด้วย <code class="mono">shop_id</code> และแยก URL Webhook เฉพาะแต่ละร้าน ไม่ปนข้อมูลกัน</p>
+        </div>
+        <div class="card">
+          <h3 class="card-title">🛡️ 4-Gate Verification</h3>
+          <p>ตรวจทั้ง QR/CRC, สลิปซ้ำ 2 ชั้น, เลขบัญชีรับเงินของร้าน (Whitelist) และยอดขั้นต่ำ</p>
+        </div>
+        <div class="card">
+          <h3 class="card-title">👑 Super Admin</h3>
+          <p>มีบัญชี Admin กลางสำหรับดูยอดรวมทุกร้าน สลับเข้าช่วยจัดการร้าน และรีเซ็ตรหัสผ่าน</p>
+        </div>
+      </div>
+    </div>
+
+    <footer class="page-footer">
+      <span>SlipFlow — Web Application Architecture &amp; User Manual</span>
+      <span>หน้าที่ 1 / 5</span>
+    </footer>
+  </section>
+
+  <!-- ==================== PAGE 2: LAYERED ARCHITECTURE & MULTI-SHOP ISOLATION ==================== -->
+  <section class="page">
+    <div>
+      <header class="topbar">
+        <div class="topbar-brand">
+          <span class="topbar-dot"></span>
+          <span>SlipFlow Architecture &amp; Operations Guide</span>
+        </div>
+        <div class="topbar-meta">ส่วนที่ 2: โครงสร้าง 3-Tier &amp; การแยกข้อมูลหลายร้านค้า (Multi-Tenancy)</div>
+      </header>
+
+      <div class="sec-head">
+        <span class="sec-num">2</span>
+        <h2 class="sec-title">องค์ประกอบระบบแบบ 3 ชั้น (3-Tier Web Application Layers)</h2>
+      </div>
+      <p class="sec-desc">
+        เพื่อให้ดูแลรักษาง่ายและขยายระบบได้ไม่จำกัด ระบบแบ่งออกเป็น 3 ชั้นมาตรฐาน (Presentation, Application Logic, และ Data Storage)
+      </p>
+
+      <div class="grid-3" style="margin-bottom: 14px;">
+        <div class="card-white">
+          <span class="badge badge-emerald" style="margin-bottom: 5px;">TIER 1 · PRESENTATION LAYER</span>
+          <h3 class="card-title">ส่วนติดต่อผู้ใช้และปลั๊กอิน</h3>
+          <ul>
+            <li><strong>React 19 + TypeScript + Vite:</strong> หน้าเว็บ SPA รองรับทั้งคอมและมือถือ</li>
+            <li><strong>Browser jsQR Pre-Scan:</strong> สแกน QR บนเบราว์เซอร์ทันทีเมื่อลากสลิปวาง</li>
+            <li><strong>Chrome Extension (MV3):</strong> ฝังปุ่มตรวจสลิปใน <code class="mono">chat.line.biz</code> และ <code class="mono">business.facebook.com</code></li>
+            <li><strong>Smart Live Polling:</strong> ซิงค์รายการสลิปใหม่ขึ้นหน้าจอพร้อม Toast แจ้งเตือนอัตโนมัติ</li>
+          </ul>
+        </div>
+
+        <div class="card-white">
+          <span class="badge badge-fb" style="margin-bottom: 5px;">TIER 2 · APPLICATION LAYER</span>
+          <h3 class="card-title">Hono Worker &amp; Business Logic</h3>
+          <ul>
+            <li><strong>Web Crypto Security:</strong> ตรวจลายเซ็น <code class="mono">X-Line-Signature</code> และ <code class="mono">X-Hub-Signature-256</code></li>
+            <li><strong>PBKDF2-SHA256 Auth:</strong> เข้ารหัสรหัสผ่าน 100,000 รอบ พร้อม Bearer Session</li>
+            <li><strong>Non-Slip Filter:</strong> ข้ามรูปสินค้าทั่วไปในแชต ไม่ส่งข้อความแจ้งเตือนรบกวนลูกค้า</li>
+            <li><strong>Account Matcher:</strong> เทียบเลขบัญชีที่ถูกปิดบางหลัก (<code class="mono">xxx-x-x5678-x</code>) กับบัญชีร้าน</li>
+          </ul>
+        </div>
+
+        <div class="card-white">
+          <span class="badge badge-amber" style="margin-bottom: 5px;">TIER 3 · DATA &amp; STORAGE LAYER</span>
+          <h3 class="card-title">Cloudflare D1 (SQLite APAC)</h3>
+          <ul>
+            <li><strong>Relational Schema:</strong> 7 ตารางหลักพร้อม Composite Index ค้นหาความเร็วสูง</li>
+            <li><strong>Strict Tenant Guard:</strong> ทุก Query บังคับกรอง <code class="mono">WHERE shop_id = ?</code></li>
+            <li><strong>UTF-8 BOM CSV Exporter:</strong> ส่งออกสมุดรายรับเปิดภาษาไทยใน Microsoft Excel ได้ทันที</li>
+            <li><strong>Local Node Adapter:</strong> รันโค้ดชุดเดียวกันบน <code class="mono">node:sqlite</code> ในเครื่องได้ 100%</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="sec-head">
+        <span class="sec-num">3</span>
+        <h2 class="sec-title">สถาปัตยกรรมแยกข้อมูลหลายร้านค้า (Multi-Shop Isolation &amp; Super Admin)</h2>
+      </div>
+      <p class="sec-desc">
+        ร้านค้าแต่ละร้านจะมีรหัส <code class="mono">webhookSlug</code> (เช่น <code class="mono">sh_b0cd3dc3...</code>) และ <code class="mono">extensionApiKey</code> ของตัวเอง ทำให้ข้อมูลสลิปและแชตบอทแยกขาดจากกันอย่างสมบูรณ์ โดยมี Super Admin ดูแลภาพรวมอยู่ชั้นบนสุด
+      </p>
+
+      <!-- DIAGRAM 2: MULTI-SHOP TENANT ISOLATION SVG -->
+      <div class="diagram-frame">
+        <svg viewBox="0 0 820 230" width="100%" height="205" xmlns="http://www.w3.org/2000/svg">
+          <!-- Top Super Admin Box -->
+          <rect x="210" y="8" width="400" height="50" rx="9" fill="#0f241d" stroke="#f59e0b" stroke-width="1.8" />
+          <text x="410" y="28" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fde68a">👑 SUPER ADMIN CONSOLE (role = 'ADMIN')</text>
+          <text x="410" y="45" text-anchor="middle" font-size="9.5" fill="#d4ece2">ดูยอดโอนรวมทุกร้าน · สลับเข้าช่วยจัดการร้านใดก็ได้ · สร้างบัญชีร้านค้า · รีเซ็ตรหัสผ่าน · ระงับร้าน</text>
+
+          <!-- Connector lines from Admin to Shops -->
+          <line x1="310" y1="58" x2="145" y2="84" stroke="#0d6b4e" stroke-width="1.5" stroke-dasharray="4 3" />
+          <line x1="410" y1="58" x2="410" y2="84" stroke="#0d6b4e" stroke-width="1.5" stroke-dasharray="4 3" />
+          <line x1="510" y1="58" x2="675" y2="84" stroke="#0d6b4e" stroke-width="1.5" stroke-dasharray="4 3" />
+
+          <!-- Shop A -->
+          <rect x="14" y="84" width="252" height="138" rx="10" fill="#ffffff" stroke="#0d6b4e" stroke-width="1.6" />
+          <rect x="14" y="84" width="252" height="28" rx="10" fill="#0d6b4e" />
+          <text x="140" y="102" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">ร้านค้า A (shop_id = 1 · sh_a1b2...)</text>
+          <text x="26" y="128" font-size="9.5" fill="#10201a">• LINE Webhook: <tspan font-family="JetBrains Mono">/api/line/webhook/sh_a1b2</tspan></text>
+          <text x="26" y="145" font-size="9.5" fill="#10201a">• FB Webhook: <tspan font-family="JetBrains Mono">/api/messenger/webhook/sh_a1b2</tspan></text>
+          <text x="26" y="162" font-size="9.5" fill="#10201a">• LINE / FB Token &amp; Secret เฉพาะร้าน A</text>
+          <text x="26" y="179" font-size="9.5" fill="#10201a">• บัญชีรับเงิน (Whitelist): กสิกรไทย xxx-5678</text>
+          <text x="26" y="196" font-size="9.5" font-weight="700" fill="#0d6b4e">• สมุดรายรับ &amp; เช็กสลิปซ้ำแยกเฉพาะร้าน A</text>
+
+          <!-- Shop B -->
+          <rect x="284" y="84" width="252" height="138" rx="10" fill="#ffffff" stroke="#0284c7" stroke-width="1.6" />
+          <rect x="284" y="84" width="252" height="28" rx="10" fill="#0284c7" />
+          <text x="410" y="102" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">ร้านค้า B (shop_id = 2 · sh_c3d4...)</text>
+          <text x="296" y="128" font-size="9.5" fill="#10201a">• LINE Webhook: <tspan font-family="JetBrains Mono">/api/line/webhook/sh_c3d4</tspan></text>
+          <text x="296" y="145" font-size="9.5" fill="#10201a">• FB Webhook: <tspan font-family="JetBrains Mono">/api/messenger/webhook/sh_c3d4</tspan></text>
+          <text x="296" y="162" font-size="9.5" fill="#10201a">• LINE / FB Token &amp; Secret เฉพาะร้าน B</text>
+          <text x="296" y="179" font-size="9.5" fill="#10201a">• บัญชีรับเงิน (Whitelist): ไทยพาณิชย์ xxx-9988</text>
+          <text x="296" y="196" font-size="9.5" font-weight="700" fill="#0284c7">• สมุดรายรับ &amp; เช็กสลิปซ้ำแยกเฉพาะร้าน B</text>
+
+          <!-- Shop C -->
+          <rect x="554" y="84" width="252" height="138" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1.6" />
+          <rect x="554" y="84" width="252" height="28" rx="10" fill="#7c3aed" />
+          <text x="680" y="102" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">ร้านค้า C (shop_id = 3 · sh_e5f6...)</text>
+          <text x="566" y="128" font-size="9.5" fill="#10201a">• LINE Webhook: <tspan font-family="JetBrains Mono">/api/line/webhook/sh_e5f6</tspan></text>
+          <text x="566" y="145" font-size="9.5" fill="#10201a">• FB Webhook: <tspan font-family="JetBrains Mono">/api/messenger/webhook/sh_e5f6</tspan></text>
+          <text x="566" y="162" font-size="9.5" fill="#10201a">• LINE / FB Token &amp; Secret เฉพาะร้าน C</text>
+          <text x="566" y="179" font-size="9.5" fill="#10201a">• บัญชีรับเงิน (Whitelist): พร้อมเพย์ 081-xxx</text>
+          <text x="566" y="196" font-size="9.5" font-weight="700" fill="#7c3aed">• สมุดรายรับ &amp; เช็กสลิปซ้ำแยกเฉพาะร้าน C</text>
+        </svg>
+        <div class="diagram-caption">
+          แผนภาพที่ 2: การแยกพื้นที่ข้อมูล (Tenant Isolation) ระหว่างร้านค้าแต่ละร้าน และการกำกับดูแลจากบัญชี Super Admin
+        </div>
+      </div>
+
+      <table class="clean-table">
+        <thead>
+          <tr>
+            <th>ระดับสิทธิ์ (Role)</th>
+            <th>ขอบเขตการมองเห็นข้อมูล</th>
+            <th>การตั้งค่า LINE / Facebook / บัญชีรับเงิน</th>
+            <th>การจัดการผู้ใช้งานอื่น</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge-amber">ADMIN (Super Admin)</span></td>
+            <td>ดูยอดรวมทั้งระบบ + สลับเข้าไปดูหรือแก้ได้ทุกร้านค้า</td>
+            <td>ช่วยตั้งค่าให้ร้านใดก็ได้ที่สลับเข้าไปดู</td>
+            <td>สร้างผู้ใช้ใหม่, รีเซ็ตรหัสผ่าน, ปรับสิทธิ์, ระงับร้าน/ผู้ใช้</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-emerald">SELLER (เจ้าของร้าน)</span></td>
+            <td>เห็นเฉพาะร้านค้าที่ตนเองเป็นเจ้าของเท่านั้น (ข้ามร้านได้ 403)</td>
+            <td>ตั้งค่าเฉพาะร้านของตนเอง (สร้างเพิ่มได้หลายสาขาในบัญชีเดียว)</td>
+            <td>ไม่สามารถเข้าเมนู Admin หรือดูข้อมูลร้านอื่นได้</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <footer class="page-footer">
+      <span>SlipFlow — Web Application Architecture &amp; User Manual</span>
+      <span>หน้าที่ 2 / 5</span>
+    </footer>
+  </section>
+
+  <!-- ==================== PAGE 3: DATAFLOW & REQUEST LIFECYCLE ==================== -->
+  <section class="page">
+    <div>
+      <header class="topbar">
+        <div class="topbar-brand">
+          <span class="topbar-dot"></span>
+          <span>SlipFlow Architecture &amp; Operations Guide</span>
+        </div>
+        <div class="topbar-meta">ส่วนที่ 3: ขั้นตอนการทำงานเมื่อลูกค้าส่งสลิป (Request-Response Lifecycle)</div>
+      </header>
+
+      <div class="sec-head">
+        <span class="sec-num">4</span>
+        <h2 class="sec-title">ลำดับการทำงานอัตโนมัติ (Automated Slip Verification Dataflow)</h2>
+      </div>
+      <p class="sec-desc">
+        เบื้องหลังการทำงานตั้งแต่ลูกค้าส่งรูปเข้าแชต LINE OA หรือ Facebook Messenger จนกระทั่งบอทตอบยืนยันยอดโอนและบันทึกรายรับขึ้นหน้าจอผู้ขาย
+      </p>
+
+      <!-- DIAGRAM 3: SEQUENCE / LIFECYCLE FLOW SVG -->
+      <div class="diagram-frame">
+        <svg viewBox="0 0 820 250" width="100%" height="225" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arr-g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#0d6b4e" />
+            </marker>
+          </defs>
+
+          <!-- Lifelines Headers -->
+          <rect x="18" y="8" width="130" height="32" rx="6" fill="#0f241d" />
+          <text x="83" y="28" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">1. ลูกค้า (LINE / FB)</text>
+
+          <rect x="230" y="8" width="150" height="32" rx="6" fill="#0d6b4e" />
+          <text x="305" y="28" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">2. SlipFlow Edge Worker</text>
+
+          <rect x="460" y="8" width="155" height="32" rx="6" fill="#0284c7" />
+          <text x="537" y="28" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">3. my-slip-reader API</text>
+
+          <rect x="680" y="8" width="122" height="32" rx="6" fill="#17382d" />
+          <text x="741" y="28" text-anchor="middle" font-size="10.5" font-weight="700" fill="#86efac">4. D1 DB &amp; Dashboard</text>
+
+          <!-- Vertical lifelines -->
+          <line x1="83" y1="40" x2="83" y2="240" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4 3" />
+          <line x1="305" y1="40" x2="305" y2="240" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4 3" />
+          <line x1="537" y1="40" x2="537" y2="240" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4 3" />
+          <line x1="741" y1="40" x2="741" y2="240" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4 3" />
+
+          <!-- Step 1 -->
+          <line x1="83" y1="60" x2="298" y2="60" stroke="#0d6b4e" stroke-width="1.8" marker-end="url(#arr-g)" />
+          <text x="190" y="54" text-anchor="middle" font-size="9.5" font-weight="600" fill="#10201a">1) ส่งรูปภาพเข้าแชต -> Webhook POST /:shopSlug</text>
+
+          <!-- Step 2 -->
+          <line x1="305" y1="84" x2="90" y2="84" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#arr-g)" />
+          <text x="195" y="79" text-anchor="middle" font-size="9" fill="#475569">2) ตรวจ HMAC Signature &amp; ตอบ 200 OK ทันที (&lt;10ms) + เปิด ctx.waitUntil()</text>
+
+          <!-- Step 3 -->
+          <line x1="305" y1="112" x2="530" y2="112" stroke="#0284c7" stroke-width="1.8" marker-end="url(#arr-g)" />
+          <text x="418" y="106" text-anchor="middle" font-size="9.5" font-weight="600" fill="#0369a1">3) ดึงไฟล์รูปจาก LINE/FB -> POST /api/verify-slip</text>
+
+          <!-- Step 4 -->
+          <line x1="537" y1="138" x2="312" y2="138" stroke="#0284c7" stroke-width="1.8" marker-end="url(#arr-g)" />
+          <text x="422" y="132" text-anchor="middle" font-size="9" fill="#0369a1">4) คืนค่า JSON: amount, transRef, bank, receiverAccount, CRC, OCR</text>
+
+          <!-- Step 5 -->
+          <rect x="205" y="150" width="200" height="26" rx="5" fill="#fef3c7" stroke="#f59e0b" />
+          <text x="305" y="166" text-anchor="middle" font-size="9.2" font-weight="700" fill="#92400e">5) กรองรูปสินค้าทั่วไป + ตรวจกฎร้านค้า 4 ด่าน</text>
+
+          <!-- Step 6 -->
+          <line x1="305" y1="194" x2="734" y2="194" stroke="#0d6b4e" stroke-width="1.8" marker-end="url(#arr-g)" />
+          <text x="520" y="188" text-anchor="middle" font-size="9.5" font-weight="600" fill="#0d6b4e">6) บันทึก Transaction &amp; Webhook Log ลง D1 (ผูก shop_id)</text>
+
+          <!-- Step 7 -->
+          <line x1="305" y1="222" x2="90" y2="222" stroke="#0d6b4e" stroke-width="1.8" marker-end="url(#arr-g)" />
+          <text x="195" y="216" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0d6b4e">7) ตอบกลับ LINE Flex Message / Messenger Receipt อัตโนมัติ</text>
+        </svg>
+        <div class="diagram-caption">
+          แผนภาพที่ 3: Sequence Diagram แสดงการประมวลผลแบบ Non-Blocking ด้วย ctx.waitUntil() เพื่อรองรับกรณีเซิร์ฟเวอร์ OCR ตื่นจากโหมดพัก
+        </div>
+      </div>
+
+      <div class="sec-head">
+        <span class="sec-num">5</span>
+        <h2 class="sec-title">เกราะป้องกันผู้ขาย 4 ด่าน (4-Gate Seller Verification Logic)</h2>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 10px;">
+        <div class="step-row">
+          <span class="step-circle">1</span>
+          <div>
+            <strong>ด่านที่ 1: ตรวจ QR Code มาตรฐานธนาคาร &amp; ค่า CRC16</strong>
+            <div style="font-size: 10.5px; color: #52645d;">
+              ถ้ารูปที่ลูกค้าส่งไม่มี QR สลิป (เช่น ส่งรูปเสื้อผ้า/สินค้าที่ต้องการซื้อ) ระบบจะจัดเป็น <code class="mono">IGNORED_NON_SLIP</code> และ <strong>ไม่ส่งข้อความแจ้งเตือนกวนลูกค้า</strong> แต่ถ้าเป็นสลิปที่ QR ถูกตัดต่อจน CRC เพี้ยน จะตีเป็น <span class="badge badge-red">ไม่ผ่าน</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-row">
+          <span class="step-circle">2</span>
+          <div>
+            <strong>ด่านที่ 2: ตรวจสลิปซ้ำ 2 ชั้น (Dual Duplicate Check)</strong>
+            <div style="font-size: 10.5px; color: #52645d;">
+              เช็กเลขอ้างอิง (<code class="mono">transRef</code>) ทั้งจากประวัติของ <code class="mono">my-slip-reader</code> และในตาราง <code class="mono">transactions</code> ของร้านค้านั้นบน D1 หากเคยรับยอดไปแล้วจะตีเป็น <span class="badge badge-red">สลิปซ้ำ</span> และไม่บวกยอดซ้ำเด็ดขาด
+            </div>
+          </div>
+        </div>
+
+        <div class="step-row">
+          <span class="step-circle">3</span>
+          <div>
+            <strong>ด่านที่ 3: เทียบบัญชีปลายทางของร้านค้า (Receiver Whitelist)</strong>
+            <div style="font-size: 10.5px; color: #52645d;">
+              ระบบดึงตัวเลขที่มองเห็นบนสลิป (เช่น <code class="mono">xxx-x-x5678-x</code> หรือ <code class="mono">08x-xxx-9988</code>) และชื่อบัญชีจาก OCR มาเทียบกับบัญชีที่ร้านลงทะเบียนไว้ หากโอนเข้าบัญชีคนอื่นจะตีเป็น <span class="badge badge-red">ผิดบัญชีร้าน</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-row">
+          <span class="step-circle">4</span>
+          <div>
+            <strong>ด่านที่ 4: ตรวจความสมบูรณ์ของยอดเงิน (Precision Amount Check)</strong>
+            <div style="font-size: 10.5px; color: #52645d;">
+              หากสลิปเป็นของจริงแต่ภาพเบลอจน OCR อ่านยอดเงินได้ <code class="mono">0.00 บาท</code> หรือต่ำกว่ายอดขั้นต่ำที่ร้านตั้งไว้ ระบบจะพักไว้ที่สถานะ <span class="badge badge-amber">รอตรวจยอด</span> เพื่อให้ผู้ขายกรอกยอดจริงและกดอนุมัติในคลิกเดียว
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <strong>จุดเด่นสำคัญ:</strong> การใช้ <code class="mono">ctx.waitUntil()</code> บน Cloudflare Workers ทำให้บอทตอบ HTTP 200 ให้ LINE และ Facebook ทันทีในระดับมิลลิวินาที แม้ช่วงที่ <code class="mono">my-slip-reader.onrender.com</code> เพิ่งตื่นจากโหมดพัก (Cold Start 20–40 วินาที) Webhook ก็จะไม่หลุดหรือ Timeout และหาก <code class="mono">replyToken</code> หมดอายุ ระบบจะสลับไปใช้ <code class="mono">pushMessage</code> อัตโนมัติ
+      </div>
+    </div>
+
+    <footer class="page-footer">
+      <span>SlipFlow — Web Application Architecture &amp; User Manual</span>
+      <span>หน้าที่ 3 / 5</span>
+    </footer>
+  </section>
+
+  <!-- ==================== PAGE 4: SELLER USER MANUAL (STEP-BY-STEP) ==================== -->
+  <section class="page">
+    <div>
+      <header class="topbar">
+        <div class="topbar-brand">
+          <span class="topbar-dot"></span>
+          <span>SlipFlow Architecture &amp; Operations Guide</span>
+        </div>
+        <div class="topbar-meta">ส่วนที่ 4: คู่มือการใช้งานสำหรับผู้ขาย (Seller Step-by-Step Manual)</div>
+      </header>
+
+      <div class="sec-head">
+        <span class="sec-num">6</span>
+        <h2 class="sec-title">เริ่มต้นใช้งานและตั้งค่าบัญชีรับเงินของร้านค้า (ภายใน 2 นาที)</h2>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 12px;">
+        <div class="card-white">
+          <h3 class="card-title">ขั้นตอนที่ 1: สมัครเปิดร้านใหม่ / สลับสาขา</h3>
+          <ol>
+            <li>เข้าเว็บ <code class="mono">https://slipflow-seller-dashboard.xenz-wora.workers.dev</code></li>
+            <li>เลือกแท็บ <strong>สมัครเปิดร้านใหม่</strong> กรอกชื่อร้านค้า, Username และรหัสผ่าน</li>
+            <li>หากเจ้าของคนเดียวมีหลายร้าน กดปุ่ม <strong>+ เพิ่มร้าน</strong> บนแถบซ้ายมือเพื่อสร้างพื้นที่ร้านที่ 2, 3 แยกกันได้ทันที</li>
+          </ol>
+        </div>
+
+        <div class="card-white">
+          <h3 class="card-title">ขั้นตอนที่ 2: ลงทะเบียนบัญชีรับเงินร้าน (สำคัญมาก)</h3>
+          <ol>
+            <li>ไปที่เมนูซ้ายมือ <strong>บัญชีร้านและตั้งค่า</strong></li>
+            <li>เลือกธนาคาร (หรือพร้อมเพย์) กรอก <strong>เลขบัญชีเต็ม 10 หลัก</strong> และ <strong>ชื่อบัญชีร้านค้า</strong> แล้วกด <strong>เพิ่มบัญชีร้าน</strong></li>
+            <li>เพิ่มได้หลายบัญชี ระบบจะใช้รายการนี้ตรวจกันสลิปโอนผิดบัญชีอัตโนมัติ</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="sec-head">
+        <span class="sec-num">7</span>
+        <h2 class="sec-title">วิธีเชื่อมต่อปลั๊กอินตรวจสลิปอัตโนมัติ (LINE OA / Facebook / Chrome)</h2>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 12px;">
+        <!-- LINE OA Guide -->
+        <div class="card" style="border-color: #9ae6b4;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <h3 class="card-title" style="margin:0;">🟢 วิธีที่ 1: ต่อ LINE OA Bot (ใช้บนมือถือ 24 ชม.)</h3>
+            <span class="badge badge-line">แนะนำ</span>
+          </div>
+          <ol>
+            <li>ใน Dashboard เปิดเมนู <strong>ปลั๊กอิน LINE / FB &gt; แท็บ LINE OA Bot</strong> แล้วคัดลอก <strong>Webhook URL เฉพาะร้านของคุณ</strong> (<code class="mono">.../api/line/webhook/sh_xxxx</code>)</li>
+            <li>เข้า <code class="mono">manager.line.biz</code> &gt; ตั้งค่า &gt; <strong>Messaging API</strong> (กดเปิดใช้) และที่เมนู <strong>ตั้งค่าการตอบกลับ</strong> ให้เลือกโหมด <strong>แชต</strong> + เปิด <strong>Webhook</strong></li>
+            <li>เข้า <code class="mono">developers.line.biz</code> เลือก Channel ของร้าน:
+              <ul>
+                <li>คัดลอก <strong>Channel Secret</strong> (แท็บ Basic settings)</li>
+                <li>กด Issue คัดลอก <strong>Channel Access Token</strong> (แท็บ Messaging API)</li>
+                <li>วาง Webhook URL ของร้าน กด Verify และเปิด <strong>Use webhook</strong></li>
+              </ul>
+            </li>
+            <li>นำ Secret และ Token มาวางใน Dashboard แล้วกด <strong>บันทึกการตั้งค่า LINE Bot</strong></li>
+            <li><em>(เสริม)</em> หากต้องการให้แจ้งเตือนเข้ากลุ่มแอดมิน เชิญบอทเข้ากลุ่มแล้วพิมพ์ <code class="mono">!id</code> นำรหัส <code class="mono">C...</code> มาใส่ช่อง Admin Target ID</li>
+          </ol>
+        </div>
+
+        <!-- Facebook Messenger Guide -->
+        <div class="card" style="border-color: #93c5fd;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <h3 class="card-title" style="margin:0;">🔵 วิธีที่ 2: ต่อ Facebook Page Messenger (มือถือ 24 ชม.)</h3>
+            <span class="badge badge-fb">Meta API</span>
+          </div>
+          <ol>
+            <li>เข้า <code class="mono">developers.facebook.com</code> &gt; สร้างแอปประเภท <strong>Business</strong> &gt; เพิ่มผลิตภัณฑ์ <strong>Messenger</strong></li>
+            <li>ไปที่ <strong>App Settings &gt; Basic</strong> คัดลอก <strong>App Secret</strong></li>
+            <li>ไปที่ <strong>Messenger API Settings</strong> เชื่อมเพจร้านค้าแล้วกด Generate เพื่อคัดลอก <strong>Page Access Token</strong></li>
+            <li>เปิด Dashboard เมนู <strong>ปลั๊กอิน LINE / FB &gt; แท็บ Facebook Messenger</strong>:
+              <ul>
+                <li>วาง <strong>App Secret</strong> และ <strong>Page Access Token</strong> แล้วกดบันทึกก่อน</li>
+                <li>คัดลอก <strong>Callback URL เฉพาะร้าน</strong> (<code class="mono">.../api/messenger/webhook/sh_xxxx</code>) และ <strong>Verify Token</strong> (<code class="mono">fbv_...</code>)</li>
+              </ul>
+            </li>
+            <li>นำ Callback URL และ Verify Token ไปใส่ในหน้า Configure Webhooks ของ Meta กด Verify and Save แล้วติ๊ก Subscribe ฟิลด์ <strong><code class="mono">messages</code></strong></li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Chrome Extension Guide -->
+      <div class="card-white" style="margin-bottom: 10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <h3 class="card-title" style="margin:0;">💻 วิธีที่ 3: Chrome Extension สำหรับแอดมินตอบแชตบนคอม (ไม่ต้องตั้งค่า Webhook)</h3>
+          <span class="badge badge-emerald">LINE &amp; FB Web</span>
+        </div>
+        <p style="margin-bottom:4px;">
+          เหมาะสำหรับร้านที่ใช้แชตบอทเจ้าอื่นอยู่แล้ว หรือยังไม่สะดวกตั้งค่า Meta Developers โดยปลั๊กอินตัวเดียวทำงานได้ทั้งบน <code class="mono">https://chat.line.biz</code> และ <code class="mono">https://business.facebook.com</code>
+        </p>
+        <ol>
+          <li>เปิด Chrome / Edge ไปที่ <code class="mono">chrome://extensions</code> &gt; เปิดสวิตช์ <strong>Developer mode</strong> มุมขวาบน &gt; กด <strong>Load unpacked</strong> เลือกโฟลเดอร์ <code class="mono">line-chat-extension</code></li>
+          <li>เปิด Dashboard เมนู <strong>ปลั๊กอิน LINE / FB &gt; แท็บ Chrome Extension</strong> คัดลอก <strong>Dashboard Server URL</strong> และ <strong>Seller Extension API Key</strong> ของร้านไปวางในป็อปอัป Extension</li>
+        </ol>
+      </div>
+
+      <div class="callout-amber callout">
+        <strong>ทิปการทดสอบก่อนใช้งานจริง:</strong> ในหน้า <strong>ปลั๊กอิน LINE / FB</strong> มีกล่อง <strong>ทดสอบจำลองลูกค้าส่งสลิป</strong> ทั้งของ LINE และ Facebook ให้คุณอัปโหลดรูปสลิปจริงเพื่อทดสอบการอ่านยอดและดูตัวอย่างข้อความตอบกลับได้ทันทีโดยยังไม่ต้องผูก Webhook
+      </div>
+    </div>
+
+    <footer class="page-footer">
+      <span>SlipFlow — Web Application Architecture &amp; User Manual</span>
+      <span>หน้าที่ 4 / 5</span>
+    </footer>
+  </section>
+
+  <!-- ==================== PAGE 5: SUPER ADMIN GUIDE, STATUS REFERENCE & DEVOPS ==================== -->
+  <section class="page">
+    <div>
+      <header class="topbar">
+        <div class="topbar-brand">
+          <span class="topbar-dot"></span>
+          <span>SlipFlow Architecture &amp; Operations Guide</span>
+        </div>
+        <div class="topbar-meta">ส่วนที่ 5: คู่มือ Super Admin · ความหมายสถานะสลิป · โครงสร้างโค้ด</div>
+      </header>
+
+      <div class="sec-head">
+        <span class="sec-num">8</span>
+        <h2 class="sec-title">คู่มือผู้ดูแลระบบรวม (Super Admin Operations)</h2>
+      </div>
+
+      <div class="grid-2" style="margin-bottom: 12px;">
+        <div class="card" style="background:#0f241d; color:#ffffff; border-color:#0f241d;">
+          <h3 class="card-title" style="color:#fde68a;">🔑 ข้อมูลเข้าสู่ระบบ Super Admin เริ่มต้น</h3>
+          <p style="color:#d4ece2; margin-bottom:6px;">
+            บัญชีแรกสุดของระบบได้รับสิทธิ์ <code class="mono" style="color:#86efac;">ADMIN</code> สำหรับดูแลทุกร้านค้า:
+          </p>
+          <ul style="color:#ffffff;">
+            <li><strong>URL:</strong> <code class="mono">https://slipflow-seller-dashboard.xenz-wora.workers.dev</code></li>
+            <li><strong>Username:</strong> <code class="mono" style="color:#86efac;">admin</code></li>
+            <li><strong>Password เริ่มต้น:</strong> <code class="mono" style="color:#fde68a;">Admin@2026!</code></li>
+          </ul>
+          <p style="color:#9bc1b2; font-size:10px; margin-top:5px;">
+            *แนะนำให้เปลี่ยนรหัสผ่านทันทีที่เมนู ดูแลระบบรวม (Admin) &gt; บัญชีผู้ใช้งาน &gt; รีเซ็ตรหัสผ่าน
+          </p>
+        </div>
+
+        <div class="card-white">
+          <h3 class="card-title">ความสามารถของเมนู "ดูแลระบบรวม (Admin)"</h3>
+          <ul>
+            <li><strong>ดูภาพรวมทั้งแพลตฟอร์ม:</strong> ยอดโอนยืนยันรวมทุกร้านวันนี้, เดือนนี้ และจำนวนร้านค้าที่เปิดใช้งาน</li>
+            <li><strong>ปุ่ม "เข้าจัดการร้าน":</strong> สลับเข้าไปดูสมุดรายรับหรือช่วยตั้งค่า LINE/FB ให้ร้านค้าใดก็ได้ในคลิกเดียว</li>
+            <li><strong>สร้างบัญชีร้านค้า &amp; รีเซ็ตรหัสผ่าน:</strong> เปิดบัญชีให้ร้านค้าใหม่ หรือตั้งรหัสผ่านใหม่เมื่อเจ้าของร้านลืมรหัส</li>
+            <li><strong>ระงับการใช้งานชั่วคราว:</strong> เมื่อกดระงับร้านค้า ระบบจะบล็อกการรับสลิปผ่าน Webhook และ Extension ของร้านนั้นทันที</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="sec-head">
+        <span class="sec-num">9</span>
+        <h2 class="sec-title">ตารางความหมายสถานะสลิปและการจัดการ (Slip Status Reference)</h2>
+      </div>
+
+      <table class="clean-table" style="margin-bottom: 12px;">
+        <thead>
+          <tr>
+            <th style="width: 18%;">สถานะในระบบ</th>
+            <th style="width: 17%;">นับเป็นรายรับ?</th>
+            <th style="width: 35%;">สาเหตุที่เกิดสถานะนี้</th>
+            <th style="width: 30%;">วิธีจัดการของผู้ขาย</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge-emerald">ยืนยันแล้ว (VERIFIED)</span></td>
+            <td><strong>นับรวมทันที</strong></td>
+            <td>QR/CRC ถูกต้อง + ไม่ซ้ำ + ตรงบัญชีร้าน + ยอดเงิน &gt; 0</td>
+            <td>ไม่ต้องทำอะไร ระบบลงบัญชีและตอบแชตแล้ว</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-amber">รอตรวจยอด (NEEDS_REVIEW)</span></td>
+            <td>ยังไม่นับรวม</td>
+            <td>QR แท้และตรงบัญชีร้าน แต่ภาพเบลอจน OCR อ่านยอดได้ 0.00 หรือต่ำกว่ายอดขั้นต่ำ</td>
+            <td>คลิกที่รายการ &gt; ดูข้อความ OCR &gt; กรอกยอดเงินจริงแล้วกด <strong>อนุมัติเป็นรายรับ</strong></td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-red">สลิปซ้ำ (DUPLICATE)</span></td>
+            <td>ไม่นับรวม</td>
+            <td>เลขอ้างอิง (<code class="mono">transRef</code>) เคยถูกบันทึกในร้านนี้ไปแล้ว</td>
+            <td>ตรวจสอบกับลูกค้า (คลิกดูเวลาที่เคยส่งครั้งแรกได้ในรายละเอียดรายการ)</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-red">ผิดบัญชีร้าน (WRONG_ACCOUNT)</span></td>
+            <td>ไม่นับรวม</td>
+            <td>เลขบัญชีหรือชื่อบัญชีปลายทางบนสลิปไม่ตรงกับ Whitelist ของร้าน</td>
+            <td>หากเป็นบัญชีใหม่ของร้าน ให้เพิ่มเลขบัญชีในเมนูตั้งค่า แล้วกดอนุมัติรายการ</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-red">ไม่ผ่าน (INVALID)</span></td>
+            <td>ไม่นับรวม</td>
+            <td>ไม่พบ QR สลิป หรือค่า CRC ไม่ตรง (สลิปถูกตัดต่อ/ภาพไม่ชัด)</td>
+            <td>แจ้งลูกค้าให้ส่งภาพสลิปต้นฉบับที่มี QR Code ชัดเจนอีกครั้ง</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge-gray">ยกเลิก (VOIDED)</span></td>
+            <td>ไม่นับรวม</td>
+            <td>ผู้ขายกดยกเลิกรายการเอง (เช่น คืนเงินลูกค้า/ออเดอร์ยกเลิก)</td>
+            <td>สามารถเปลี่ยนสถานะกลับเป็นยืนยันแล้วได้ตลอดเวลาหากยกเลิกผิดใบ</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="sec-head">
+        <span class="sec-num">10</span>
+        <h2 class="sec-title">โครงสร้างไฟล์โปรเจกต์และคำสั่งดูแลรักษาระบบ (Project &amp; DevOps Reference)</h2>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="card-title">📂 โครงสร้างโฟลเดอร์สำคัญ</h3>
+          <ul class="mono" style="font-size: 10px; line-height: 1.55;">
+            <li><strong>worker/</strong> — Cloudflare Worker (Hono, D1 Repo, LINE, FB, Crypto)</li>
+            <li><strong>migrations/</strong> — ไฟล์ SQL สร้างตาราง D1 (0001, 0002, 0003)</li>
+            <li><strong>client/src/</strong> — React 19 Dashboard (Overview, Ledger, LINE/FB, Admin)</li>
+            <li><strong>line-chat-extension/</strong> — Chrome Extension (MV3 สำหรับ LINE &amp; FB)</li>
+            <li><strong>server/</strong> — Local Node.js Server &amp; D1 SQLite Adapter</li>
+            <li><strong>tests/api.test.js</strong> — ชุดทดสอบอัตโนมัติ 8 สถานการณ์ครบวงจร</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">🚀 คำสั่งรันและอัปเดตระบบ (PowerShell / Terminal)</h3>
+          <ul class="mono" style="font-size: 10px; line-height: 1.55;">
+            <li><strong>npm.cmd run dev</strong> — รันโหมดพัฒนาในเครื่อง (:3001 + :5173)</li>
+            <li><strong>npm.cmd test</strong> — รันชุดทดสอบระบบทั้งหมด (8/8 tests)</li>
+            <li><strong>npm.cmd run cf:migrate:remote</strong> — อัปเดตตารางฐานข้อมูล D1</li>
+            <li><strong>npm.cmd run cf:deploy</strong> — Build และ Deploy ขึ้น Cloudflare Workers</li>
+            <li><strong>git push origin main</strong> — ซิงค์โค้ดขึ้น GitHub Repository</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <footer class="page-footer">
+      <span>SlipFlow — Web Application Architecture &amp; User Manual</span>
+      <span>หน้าที่ 5 / 5</span>
+    </footer>
+  </section>
+
+</body>
+</html>
