@@ -6,6 +6,7 @@ import { createApp } from '../server/app.js';
 import { matchReceiverAccount } from '../server/services/verificationEngine.js';
 import { verifyLineSignature, buildSlipFlexMessage } from '../server/services/lineService.js';
 import { verifyFacebookSignature, buildMessengerSlipReply } from '../server/services/messengerService.js';
+import { verifyLineSignatureWeb, verifyFacebookSignatureWeb } from '../worker/crypto.js';
 
 function signLinePayload(bodyStr, secret) {
   return crypto.createHmac('sha256', secret).update(Buffer.from(bodyStr, 'utf8')).digest('base64');
@@ -168,6 +169,20 @@ test('verifyLineSignature validates HMAC-SHA256 properly', () => {
   assert.equal(verifyLineSignature(Buffer.from(body), sig, secret), true);
   assert.equal(verifyLineSignature(Buffer.from(body + ' '), sig, secret), false);
   assert.equal(verifyLineSignature(Buffer.from(body), 'bad-sig', secret), false);
+});
+
+test('Cloudflare Worker Web Crypto HMAC verifies LINE and Facebook signatures', async () => {
+  const secret = 'cf-worker-secret-456';
+  const bodyStr = JSON.stringify({ events: [{ type: 'message' }] });
+  const rawBuf = new TextEncoder().encode(bodyStr).buffer;
+
+  const lineSig = signLinePayload(bodyStr, secret);
+  assert.equal(await verifyLineSignatureWeb(rawBuf, lineSig, secret), true);
+  assert.equal(await verifyLineSignatureWeb(rawBuf, 'invalid', secret), false);
+
+  const fbSig = signFacebookPayload(bodyStr, secret);
+  assert.equal(await verifyFacebookSignatureWeb(rawBuf, fbSig, secret), true);
+  assert.equal(await verifyFacebookSignatureWeb(rawBuf, 'sha256=bad', secret), false);
 });
 
 test('buildSlipFlexMessage constructs valid LINE Flex bubble for verified and duplicate slips', () => {

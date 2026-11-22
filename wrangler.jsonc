@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "slipflow-seller-dashboard",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "SLIP_API_BASE_URL": "https://my-slip-reader.onrender.com",
+    "SLIP_API_TIMEOUT_MS": "65000"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "slipflow-db",
+      "database_id": "f2830632-3576-4aa5-928e-232990456f73",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

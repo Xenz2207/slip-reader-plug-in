@@ -201,22 +201,72 @@ export function subscribeLiveEvents(handlers: {
   onTransactionChange?: (tx?: Transaction) => void;
   onWebhookLog?: () => void;
 }): () => void {
-  const key = localStorage.getItem('slipflow_dashboard_key') || '';
-  const url = key ? `/api/events?dashboardKey=${encodeURIComponent(key)}` : '/api/events';
-  const es = new EventSource(url);
+  let disposed = false;
+  let es: EventSource | null = null;
+  let pollTimer: number | null = null;
+  let lastSeenTxId: number | null = null;
 
-  es.addEventListener('connected', () => handlers.onConnect?.());
-  es.addEventListener('transaction:created', (ev) => {
-    try {
-      handlers.onTransactionChange?.(JSON.parse((ev as MessageEvent).data));
-    } catch {
-      handlers.onTransactionChange?.();
-    }
-  });
-  es.addEventListener('transaction:updated', () => handlers.onTransactionChange?.());
-  es.addEventListener('transaction:deleted', () => handlers.onTransactionChange?.());
-  es.addEventListener('webhook:logged', () => handlers.onWebhookLog?.());
-  es.onerror = () => handlers.onDisconnect?.();
+  function startPolling() {
+    if (disposed || pollTimer !== null) return;
+    handlers.onConnect?.();
 
-  return () => es.close();
+    const tick = async () => {
+      if (disposed) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      try {
+        const res = await api.getTransactions({ limit: 1 });
+        const latest = res.items[0];
+        handlers.onConnect?.();
+        if (latest) {
+          if (lastSeenTxId !== null && latest.id > lastSeenTxId) {
+            lastSeenTxId = latest.id;
+            handlers.onTransactionChange?.(latest);
+            handlers.onWebhookLog?.();
+          } else if (lastSeenTxId === null) {
+            lastSeenTxId = latest.id;
+          }
+        }
+      } catch {
+        handlers.onDisconnect?.();
+      }
+    };
+
+    void tick();
+    pollTimer = window.setInterval(() => void tick(), 5000);
+  }
+
+  // Detect whether backend supports SSE (Node) or polling (Cloudflare Workers)
+  fetch('/api/health', { headers: getHeaders() })
+    .then((r) => r.json())
+    .then((info) => {
+      if (disposed) return;
+      if (info?.realtimeMode === 'polling') {
+        startPolling();
+        return;
+      }
+      const key = localStorage.getItem('slipflow_dashboard_key') || '';
+      const url = key ? `/api/events?dashboardKey=${encodeURIComponent(key)}` : '/api/events';
+      es = new EventSource(url);
+      es.addEventListener('connected', () => handlers.onConnect?.());
+      es.addEventListener('transaction:created', (ev) => {
+        try {
+          handlers.onTransactionChange?.(JSON.parse((ev as MessageEvent).data));
+        } catch {
+          handlers.onTransactionChange?.();
+        }
+      });
+      es.addEventListener('transaction:updated', () => handlers.onTransactionChange?.());
+      es.addEventListener('transaction:deleted', () => handlers.onTransactionChange?.());
+      es.addEventListener('webhook:logged', () => handlers.onWebhookLog?.());
+      es.onerror = () => handlers.onDisconnect?.();
+    })
+    .catch(() => {
+      if (!disposed) startPolling();
+    });
+
+  return () => {
+    disposed = true;
+    es?.close();
+    if (pollTimer !== null) window.clearInterval(pollTimer);
+  };
 }

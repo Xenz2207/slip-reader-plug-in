@@ -39,7 +39,24 @@ npm start
 
 ---
 
-## การ Deploy ขึ้น Render (1 คลิก — ฟรี, ได้ลิงก์ HTTPS สำหรับต่อ LINE & Facebook บนมือถือ)
+## การ Deploy ขึ้น Cloudflare Workers + D1 (แนะนำ — ฟรี, ไม่หลับ, SQLite ถาวร)
+
+```bash
+# 1. ล็อกอิน Cloudflare (ครั้งแรกครั้งเดียว)
+npx wrangler login
+
+# 2. รัน Migration สร้างตารางบน D1
+npm run cf:migrate:remote
+
+# 3. Build React + Deploy Worker พร้อม Static Assets
+npm run cf:deploy
+```
+
+*(เลือกตั้งค่า `DASHBOARD_ACCESS_KEY` ผ่าน `npx wrangler secret put DASHBOARD_ACCESS_KEY` หากต้องการล็อกหน้า Dashboard ด้วยรหัสผ่าน)*
+
+---
+
+## การ Deploy ขึ้น Render (ทางเลือก)
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Xenz2207/slip-reader-plug-in)
 

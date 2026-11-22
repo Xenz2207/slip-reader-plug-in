@@ -13,12 +13,17 @@
     "build": "vite build",
     "start": "node server/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "cf:dev": "vite build && wrangler dev",
+    "cf:migrate:local": "wrangler d1 migrations apply slipflow-db --local",
+    "cf:migrate:remote": "wrangler d1 migrations apply slipflow-db --remote",
+    "cf:deploy": "vite build && wrangler deploy"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "hono": "^4.13.20",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.511.0",
     "multer": "^2.0.0",
@@ -34,6 +39,7 @@
     "concurrently": "^9.1.2",
     "tailwindcss": "^4.1.4",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "wrangler": "^4.166.0"
   }
 }
