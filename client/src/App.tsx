@@ -39,6 +39,7 @@ export function App() {
   const [showNewShopModal, setShowNewShopModal] = useState<boolean>(false);
   const [newShopName, setNewShopName] = useState<string>('');
   const [creatingShop, setCreatingShop] = useState<boolean>(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
 
   const [activeNav, setActiveNav] = useState<NavKey>('overview');
   const [txInitialFilter, setTxInitialFilter] = useState<string>('ALL');
@@ -61,6 +62,7 @@ export function App() {
   const handleLogout = useCallback(() => {
     void api.logout().catch(() => {});
     authStorage.clear();
+    setShowLogoutConfirm(false);
     setUser(null);
     setShops([]);
     setActiveShopId(0);
@@ -269,7 +271,7 @@ export function App() {
         activeShopId={activeShopId}
         onSwitchShop={handleSwitchShop}
         onCreateShopClick={() => setShowNewShopModal(true)}
-        onLogout={handleLogout}
+        onLogout={() => setShowLogoutConfirm(true)}
         sseConnected={sseConnected}
         alertCount={totalAlerts}
         slipApiHealth={slipApiHealth}
@@ -435,6 +437,49 @@ export function App() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#10201A]/40">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="ยืนยันการออกจากระบบ"
+            className="overlay-scroll w-full max-w-[380px] rounded-[16px] bg-white p-6 shadow-xl space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-[17px] font-bold text-[#10201A]">ยืนยันการออกจากระบบ</h2>
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="btn-press p-1 rounded-[8px] text-[#52645D] hover:bg-[#F4F6F5] cursor-pointer"
+                aria-label="ปิดหน้าต่าง"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-[13.5px] text-[#42544D]">
+              คุณต้องการออกจากระบบบัญชี <strong className="text-[#10201A]">@{user.username}</strong> ใช่หรือไม่?
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="btn-press btn-secondary px-4 py-2 rounded-[10px] text-[13.5px] font-medium cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="btn-press px-4 py-2 rounded-[10px] text-[13.5px] font-semibold bg-[#C82829] text-white hover:bg-[#AF1F20] cursor-pointer"
+              >
+                ออกจากระบบ
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
