@@ -2,6 +2,10 @@
 
 ระบบ **Webapp Dashboard สำหรับผู้ขาย** พร้อม **Plug-in ตรวจสลิปอัตโนมัติ** รองรับครบทั้ง **LINE Official Account** และ **Facebook Page Messenger** (ใช้งานได้ 100% บนมือถือผ่าน Webhook Bot และบนคอมพิวเตอร์ผ่าน Chrome Extension) เชื่อมต่อกับ [Thai Slip Reader & Verification API](https://my-slip-reader.onrender.com/) (`POST /api/verify-slip`)
 
+- 🌐 **Production Dashboard:** [https://slipflow-seller-dashboard.xenz-wora.workers.dev](https://slipflow-seller-dashboard.xenz-wora.workers.dev)
+- 📄 **คู่มือการใช้งานและสถาปัตยกรรมระบบ (PDF 5 หน้า):** [SlipFlow-Manual-and-Architecture.pdf](./SlipFlow-Manual-and-Architecture.pdf)
+- 📐 **ไฟล์ต้นฉบับคู่มือ (HTML + Vector Diagrams):** [docs/SlipFlow-Architecture-Manual.html](./docs/SlipFlow-Architecture-Manual.html)
+
 ---
 
 ## ความสามารถหลัก
