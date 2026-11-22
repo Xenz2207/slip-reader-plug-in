@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SlipFlow LINE Plug-in</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <div>
+          <div class="brand">SlipFlow Plug-in</div>
+          <div id="shopSubtitle" class="sub">สำหรับ LINE OA &amp; Facebook Messenger</div>
+        </div>
+        <span id="connBadge" class="badge badge-idle">ยังไม่เชื่อมต่อ</span>
+      </header>
+
+      <section id="summaryCard" class="summary hidden">
+        <div class="sum-label">รายรับยืนยันวันนี้</div>
+        <div id="todayRevenue" class="sum-amount">0.00 บาท</div>
+        <div id="todayMeta" class="sum-meta">ผ่าน 0 ใบ · แจ้งเตือน 0 ใบ</div>
+      </section>
+
+      <form id="configForm" class="form">
+        <label class="field">
+          <span>Dashboard Server URL</span>
+          <input id="dashboardUrl" type="url" placeholder="http://localhost:3001" required />
+        </label>
+
+        <label class="field">
+          <span>Seller Extension API Key</span>
+          <input id="apiKey" type="password" placeholder="วางคีย์จากหน้า ปลั๊กอิน LINE ใน Dashboard" required />
+        </label>
+
+        <label class="check-row">
+          <input id="autoCheck" type="checkbox" checked />
+          <span>ตรวจสลิปใหม่อัตโนมัติเมื่อลูกค้าส่งรูปในแชต</span>
+        </label>
+
+        <div id="statusMsg" class="status-msg"></div>
+
+        <div class="actions">
+          <button type="submit" id="saveBtn" class="btn btn-primary">บันทึกและเชื่อมต่อ</button>
+          <button type="button" id="openDashboardBtn" class="btn btn-secondary">เปิด Dashboard</button>
+        </div>
+      </form>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

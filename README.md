@@ -1,0 +1,58 @@
+# SlipFlow — Seller Revenue Dashboard & Chat Plug-ins (LINE OA + Facebook Messenger)
+
+ระบบ **Webapp Dashboard สำหรับผู้ขาย** พร้อม **Plug-in ตรวจสลิปอัตโนมัติ** รองรับครบทั้ง **LINE Official Account** และ **Facebook Page Messenger** (ใช้งานได้ 100% บนมือถือผ่าน Webhook Bot และบนคอมพิวเตอร์ผ่าน Chrome Extension) เชื่อมต่อกับ [Thai Slip Reader & Verification API](https://my-slip-reader.onrender.com/) (`POST /api/verify-slip`)
+
+---
+
+## ความสามารถหลัก
+
+1. **Seller Revenue Dashboard (React + Node.js + SQLite)**
+   - สรุปรายรับยืนยันแล้วรายวัน / รายเดือน / กราฟ 7, 14, 30 วัน แยกตามธนาคารและช่องทาง (`LINE`, `Facebook Messenger`, `Web`, `Manual`)
+   - อัปเดตสดแบบ **Real-time (SSE)** และรองรับการใช้งานบนมือถือ
+   - **ตรวจสลิปด่วนบนเว็บ** พร้อมสแกน Mini QR บนเบราว์เซอร์ (`jsQR`)
+   - **สมุดรายการสลิป**: ค้นหา/กรอง, ดูข้อมูล QR (TLV) และข้อความ OCR, แก้ยอด/อนุมัติรายการ, เพิ่มรายรับเอง และ **Export CSV (UTF-8 BOM)**
+   - **เกราะป้องกันฝั่งผู้ขาย**: Whitelist บัญชีปลายทางร้านค้า (กันโอนผิดบัญชี), กันสลิปซ้ำ (`transRef`) 2 ชั้น และแยกสถานะรอตรวจเมื่อยอดเป็น `0.00`
+
+2. **LINE OA Webhook Bot (`POST /api/line/webhook`) — ใช้บนมือถือได้ 24 ชม.**
+   - ตรวจลายเซ็น `X-Line-Signature`, ตอบกลับด้วย **LINE Flex Message**, ข้ามรูปสินค้าที่ไม่ใช่สลิปอัตโนมัติ และรองรับคำสั่ง `!id` ในกลุ่มแอดมิน
+
+3. **Facebook Page Messenger Webhook Bot (`GET/POST /api/messenger/webhook`) — ใช้บนมือถือได้ 24 ชม.**
+   - รองรับ Meta Webhook Verification (`GET`) และตรวจลายเซ็น `X-Hub-Signature-256` (`POST`)
+   - ข้ามข้อความ Echo (`is_echo`) และรูปสินค้าทั่วไปที่ไม่ใช่สลิปโดยอัตโนมัติ
+   - ดึงรูปสลิป -> ตรวจผ่าน `my-slip-reader.onrender.com` -> บันทึกรายรับเข้า Dashboard (`FB_MESSENGER`) -> ตอบสรุปยอดกลับเข้าแชตลูกค้าผ่าน Meta Send API (และส่งแจ้งเตือนเข้ากลุ่ม LINE แอดมินได้พร้อมกัน)
+
+4. **Chrome Extension (`line-chat-extension/`) — สำหรับคอมพิวเตอร์**
+   - ตัวเดียวรองรับทั้ง **LINE OA Manager (`chat.line.biz`)** และ **Meta Business Suite / Facebook Messenger (`business.facebook.com`, `messenger.com`)**
+
+---
+
+## การติดตั้งและรันบนเครื่อง (Local)
+
+```bash
+npm install
+npm run build
+npm start
+# เปิดเบราว์เซอร์ที่ http://localhost:3001
+```
+
+> บน Windows PowerShell หากติด Execution Policy ให้ใช้ `npm.cmd start` หรือ `npm.cmd run dev`
+
+---
+
+## การ Deploy ขึ้น Render (1 คลิก — ฟรี, ได้ลิงก์ HTTPS สำหรับต่อ LINE & Facebook บนมือถือ)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Xenz2207/slip-reader-plug-in)
+
+หรือเข้าลิงก์ตรง: `https://render.com/deploy?repo=https://github.com/Xenz2207/slip-reader-plug-in`
+
+> **แนะนำสำหรับ Render Free Tier:** หากต้องการให้ค่า LINE / Facebook Token คงอยู่ถาวรแม้เซิร์ฟเวอร์รีสตาร์ต สามารถใส่ `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `FB_APP_SECRET`, `FB_PAGE_ACCESS_TOKEN` และ `DASHBOARD_ACCESS_KEY` ไว้ในหน้า **Environment** ของ Render ได้เลย
+
+---
+
+## การทดสอบ
+
+```bash
+npm run typecheck
+npm run build
+npm test
+```

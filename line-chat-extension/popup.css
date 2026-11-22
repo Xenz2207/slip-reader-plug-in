@@ -1,0 +1,182 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 340px;
+  background: #f4f6f5;
+  color: #10201a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", sans-serif;
+  font-size: 13px;
+}
+
+.wrap {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.top {
+  background: #0f241d;
+  color: #ffffff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.brand {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sub {
+  font-size: 11.5px;
+  color: #9bc1b2;
+  margin-top: 2px;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge-idle {
+  background: rgba(255, 255, 255, 0.14);
+  color: #dbeae3;
+}
+
+.badge-ok {
+  background: #06c755;
+  color: #082314;
+}
+
+.badge-err {
+  background: #fdecec;
+  color: #c82829;
+}
+
+.summary {
+  background: #ffffff;
+  border: 1px solid #e3e8e5;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.summary.hidden {
+  display: none;
+}
+
+.sum-label {
+  font-size: 11.5px;
+  color: #52645d;
+}
+
+.sum-amount {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0d6b4e;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.sum-meta {
+  font-size: 11.5px;
+  color: #64756e;
+  margin-top: 2px;
+}
+
+.form {
+  background: #ffffff;
+  border: 1px solid #e3e8e5;
+  border-radius: 12px;
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #42544d;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid #c9d4ce;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: #10201a;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: #0d6b4e;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #10201a;
+  cursor: pointer;
+}
+
+.check-row input {
+  accent-color: #0d6b4e;
+}
+
+.status-msg {
+  font-size: 12px;
+  min-height: 16px;
+}
+
+.status-msg.ok {
+  color: #0d6b4e;
+}
+
+.status-msg.err {
+  color: #c82829;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.btn {
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn-primary {
+  background: #0d6b4e;
+  color: #ffffff;
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: #10201a;
+  border-color: #c9d4ce;
+}

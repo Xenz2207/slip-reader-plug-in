@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: slipflow-seller-dashboard
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.15.0
+      - key: NODE_NO_WARNINGS
+        value: "1"
+      - key: SLIP_API_BASE_URL
+        value: https://my-slip-reader.onrender.com
+      - key: SLIP_API_TIMEOUT_MS
+        value: "65000"
+      - key: EXTENSION_API_KEY
+        generateValue: true
+      - key: FB_VERIFY_TOKEN
+        generateValue: true

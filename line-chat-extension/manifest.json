@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "SlipFlow — ตรวจสลิปอัตโนมัติ LINE OA & Facebook Messenger",
+  "version": "1.1.0",
+  "description": "ตรวจสลิปโอนเงินในแชต LINE Official Account (chat.line.biz) และ Facebook Messenger / Meta Business Suite แล้วบันทึกรายรับเข้า SlipFlow Dashboard อัตโนมัติ",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://chat.line.biz/*",
+    "https://manager.line.biz/*",
+    "https://business.facebook.com/*",
+    "https://www.messenger.com/*",
+    "https://www.facebook.com/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "https://*/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SlipFlow LINE & Facebook Slip Checker",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.line.biz/*",
+        "https://manager.line.biz/*",
+        "https://business.facebook.com/*",
+        "https://www.messenger.com/*",
+        "https://www.facebook.com/messages/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
