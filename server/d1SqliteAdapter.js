@@ -12,13 +12,14 @@ export function createD1SqliteAdapter(dbPath = ':memory:') {
   }
 
   // Apply D1 migrations in order
-  const initSql = fs.readFileSync(path.resolve(process.cwd(), 'migrations/0001_init.sql'), 'utf8');
-  const multiShopSql = fs.readFileSync(path.resolve(process.cwd(), 'migrations/0002_multi_shop.sql'), 'utf8');
-  sqlite.exec(initSql);
-  try {
-    sqlite.exec(multiShopSql);
-  } catch {
-    // Already applied on existing local db
+  const migrationFiles = ['0001_init.sql', '0002_multi_shop.sql', '0003_admin_role.sql'];
+  for (const file of migrationFiles) {
+    const sql = fs.readFileSync(path.resolve(process.cwd(), 'migrations', file), 'utf8');
+    try {
+      sqlite.exec(sql);
+    } catch {
+      // Ignore if column/table already exists on existing local file DB
+    }
   }
 
   function makeBoundStatement(sql, params = []) {

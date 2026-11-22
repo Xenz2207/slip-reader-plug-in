@@ -6,6 +6,7 @@ import { OverviewPage } from './pages/OverviewPage';
 import { TransactionsPage } from './pages/TransactionsPage';
 import { LinePluginPage } from './pages/LinePluginPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AdminPage } from './pages/AdminPage';
 import { AuthPage } from './pages/AuthPage';
 import { api, ApiAuthError, authStorage, subscribeLiveEvents } from './lib/api';
 import { CHANNEL_META, formatBaht, STATUS_META } from './lib/format';
@@ -250,6 +251,13 @@ export function App() {
     (summary?.allTime.wrongAccountCount || 0) +
     (summary?.allTime.reviewCount || 0);
 
+  const activeShopObj = shops.find((s) => s.id === activeShopId);
+  const isInspectingOtherShop =
+    user.role === 'ADMIN' &&
+    activeShopObj &&
+    activeShopObj.ownerUserId !== user.id &&
+    activeNav !== 'admin';
+
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#F4F6F5]">
       <SidebarNav
@@ -268,7 +276,26 @@ export function App() {
       />
 
       <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-10">
-        <div className="max-w-[1220px] mx-auto">
+        <div className="max-w-[1220px] mx-auto space-y-5">
+          {isInspectingOtherShop && (
+            <div className="rounded-[12px] bg-[#0F241D] text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[13px]">
+              <div>
+                <span className="px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 text-[11px] font-bold mr-2">
+                  SUPER ADMIN
+                </span>
+                กำลังดูและจัดการข้อมูลของร้าน <strong>{activeShopObj.name}</strong>
+                {activeShopObj.ownerUsername ? ` (เจ้าของ: @${activeShopObj.ownerUsername})` : ''}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleNavigate('admin')}
+                className="text-[#4ADE80] hover:underline font-semibold cursor-pointer"
+              >
+                กลับหน้าดูแลระบบรวม
+              </button>
+            </div>
+          )}
+
           {activeNav === 'overview' && (
             <OverviewPage
               summary={summary}
@@ -334,6 +361,19 @@ export function App() {
               onAccountsChanged={() => void api.getSellerAccounts().then((r) => setSellerAccounts(r.accounts))}
               onCategoriesChanged={() => void api.getCategories().then((r) => setCategories(r.categories))}
               onRecheckSlipApi={checkSlipApi}
+            />
+          )}
+
+          {activeNav === 'admin' && user.role === 'ADMIN' && (
+            <AdminPage
+              currentUserId={user.id}
+              onInspectShop={(shopId) => {
+                handleSwitchShop(shopId);
+                handleNavigate('overview');
+              }}
+              onShopsChanged={() => {
+                void api.getMe().then((r) => setShops(r.shops));
+              }}
             />
           )}
         </div>

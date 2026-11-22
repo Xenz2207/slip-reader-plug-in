@@ -1,4 +1,6 @@
 import type {
+  AdminPlatformOverview,
+  AdminUserSummary,
   AuthUser,
   CategoryItem,
   DashboardSummary,
@@ -111,6 +113,58 @@ export const api = {
     return requestJson<{ shop: ShopInfo; shops: ShopInfo[] }>('/api/shops', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  // Platform Super-Admin endpoints
+  getAdminOverview() {
+    return requestJson<AdminPlatformOverview>('/api/admin/overview');
+  },
+
+  adminCreateUser(payload: {
+    username: string;
+    password: string;
+    shopName: string;
+    displayName?: string;
+    role: 'ADMIN' | 'SELLER';
+  }) {
+    return requestJson<{ ok: boolean; user: AuthUser; shop: ShopInfo }>('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  adminUpdateUser(
+    id: number,
+    patch: {
+      displayName?: string;
+      role?: 'ADMIN' | 'SELLER';
+      isActive?: boolean;
+      newPassword?: string;
+    }
+  ) {
+    return requestJson<{ user: AdminUserSummary }>(`/api/admin/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  },
+
+  adminDeleteUser(id: number) {
+    return requestJson<{ ok: boolean }>(`/api/admin/users/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  adminUpdateShop(id: number, patch: { name?: string; isActive?: boolean }) {
+    return requestJson<{ shop: ShopInfo }>(`/api/admin/shops/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  },
+
+  adminDeleteShop(id: number) {
+    return requestJson<{ ok: boolean }>(`/api/admin/shops/${id}`, {
+      method: 'DELETE',
     });
   },
 

@@ -123,15 +123,71 @@ export interface AuthUser {
   id: number;
   username: string;
   displayName: string;
+  role: 'ADMIN' | 'SELLER';
+  isActive?: boolean;
   createdAt: string;
 }
 
 export interface ShopInfo {
   id: number;
   ownerUserId: number;
+  ownerUsername?: string;
+  ownerDisplayName?: string;
   name: string;
   webhookSlug: string;
+  isActive?: boolean;
   createdAt: string;
+}
+
+export interface AdminShopSummary {
+  id: number;
+  name: string;
+  webhookSlug: string;
+  isActive: boolean;
+  createdAt: string;
+  ownerUserId: number;
+  ownerUsername: string;
+  ownerDisplayName: string;
+  ownerIsActive: boolean;
+  todayRevenue: number;
+  monthRevenue: number;
+  allTimeRevenue: number;
+  verifiedCount: number;
+  alertCount: number;
+  totalCount: number;
+  lastActivityAt: string;
+  hasLineConfigured: boolean;
+  hasFbConfigured: boolean;
+  bankAccountCount: number;
+}
+
+export interface AdminUserSummary {
+  id: number;
+  username: string;
+  displayName: string;
+  role: 'ADMIN' | 'SELLER';
+  isActive: boolean;
+  shopCount: number;
+  createdAt: string;
+}
+
+export interface AdminPlatformOverview {
+  kpis: {
+    totalShops: number;
+    activeShops: number;
+    totalUsers: number;
+    adminUsers: number;
+    todayRevenue: number;
+    todayVerifiedCount: number;
+    todayAlertCount: number;
+    monthRevenue: number;
+    monthVerifiedCount: number;
+    allTimeRevenue: number;
+    allTimeVerifiedCount: number;
+    allTimeTotalCount: number;
+  };
+  shops: AdminShopSummary[];
+  users: AdminUserSummary[];
 }
 
 export interface PublicSettings {

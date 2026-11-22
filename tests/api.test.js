@@ -215,7 +215,7 @@ test('Multi-Shop Auth & Strict Tenant Isolation: two shops never mix transaction
     const unauth = await fetch(`${srv.baseUrl}/api/summary`);
     assert.equal(unauth.status, 401);
 
-    // Register Shop A and Shop B
+    // Register Shop A (1st user -> auto-promoted to ADMIN) and Shop B (2nd user -> SELLER)
     const shopA = await registerShopAccount(srv.baseUrl, {
       username: 'seller_a',
       shopName: 'ร้านเสื้อผ้า A',
@@ -225,17 +225,25 @@ test('Multi-Shop Auth & Strict Tenant Isolation: two shops never mix transaction
       shopName: 'ร้านคาเฟ่ B',
     });
 
+    assert.equal(shopA.user.role, 'ADMIN');
+    assert.equal(shopB.user.role, 'SELLER');
     assert.notEqual(shopA.shop.id, shopB.shop.id);
     assert.notEqual(shopA.shop.webhookSlug, shopB.shop.webhookSlug);
 
-    // Shop A cannot access Shop B's data by spoofing X-Shop-Id
+    // Normal SELLER (Shop B) cannot access Shop A's data by spoofing X-Shop-Id
     const crossAccess = await fetch(`${srv.baseUrl}/api/summary`, {
       headers: {
-        Authorization: `Bearer ${shopA.token}`,
-        'X-Shop-Id': String(shopB.shop.id),
+        Authorization: `Bearer ${shopB.token}`,
+        'X-Shop-Id': String(shopA.shop.id),
       },
     });
     assert.equal(crossAccess.status, 403);
+
+    // Normal SELLER (Shop B) cannot access /api/admin/overview
+    const nonAdminOverview = await fetch(`${srv.baseUrl}/api/admin/overview`, {
+      headers: shopB.headers(),
+    });
+    assert.equal(nonAdminOverview.status, 403);
 
     // Record manual revenue in Shop A (1,000 Baht) and Shop B (450 Baht)
     await fetch(`${srv.baseUrl}/api/transactions/manual`, {
@@ -253,6 +261,54 @@ test('Multi-Shop Auth & Strict Tenant Isolation: two shops never mix transaction
     const sumB = await (await fetch(`${srv.baseUrl}/api/summary`, { headers: shopB.headers() })).json();
     assert.equal(sumA.today.revenue, 1000);
     assert.equal(sumB.today.revenue, 450);
+
+    // Super Admin (Shop A) can view Platform Overview across all shops (1000 + 450 = 1450 Baht)
+    const adminOverviewRes = await fetch(`${srv.baseUrl}/api/admin/overview`, {
+      headers: shopA.headers(),
+    });
+    assert.equal(adminOverviewRes.status, 200);
+    const adminOverview = await adminOverviewRes.json();
+    assert.equal(adminOverview.kpis.totalShops, 2);
+    assert.equal(adminOverview.kpis.todayRevenue, 1450);
+
+    // Super Admin can also inspect Shop B's dashboard directly via X-Shop-Id
+    const adminInspectB = await fetch(`${srv.baseUrl}/api/summary`, {
+      headers: {
+        Authorization: `Bearer ${shopA.token}`,
+        'X-Shop-Id': String(shopB.shop.id),
+      },
+    });
+    assert.equal(adminInspectB.status, 200);
+    const adminInspectBData = await adminInspectB.json();
+    assert.equal(adminInspectBData.today.revenue, 450);
+
+    // Super Admin can create a new seller user + shop, and reset password
+    const createByAdmin = await fetch(`${srv.baseUrl}/api/admin/users`, {
+      method: 'POST',
+      headers: shopA.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        username: 'seller_c',
+        password: 'initpass123',
+        shopName: 'ร้านขนม C',
+        role: 'SELLER',
+      }),
+    });
+    assert.equal(createByAdmin.status, 201);
+    const createdC = await createByAdmin.json();
+
+    const resetRes = await fetch(`${srv.baseUrl}/api/admin/users/${createdC.user.id}`, {
+      method: 'PATCH',
+      headers: shopA.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ newPassword: 'newpassword999' }),
+    });
+    assert.equal(resetRes.status, 200);
+
+    const loginNewPass = await fetch(`${srv.baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'seller_c', password: 'newpassword999' }),
+    });
+    assert.equal(loginNewPass.status, 200);
 
     // Set different LINE secrets for Shop A and Shop B
     await fetch(`${srv.baseUrl}/api/settings`, {

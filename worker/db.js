@@ -111,27 +111,48 @@ export function createD1Repository(d1, env = {}) {
     },
 
     async getUserById(id) {
-      const row = await d1.prepare('SELECT id, username, display_name, created_at FROM users WHERE id = ?').bind(Number(id)).first();
+      const row = await d1
+        .prepare('SELECT id, username, display_name, role, is_active, created_at FROM users WHERE id = ?')
+        .bind(Number(id))
+        .first();
       if (!row) return null;
       return {
         id: Number(row.id),
         username: row.username,
         displayName: row.display_name,
+        role: row.role || 'SELLER',
+        isActive: row.is_active !== 0,
         createdAt: row.created_at,
       };
     },
 
-    async createUserWithShop({ username, displayName, passwordHash, passwordSalt, shopName }) {
+    async countAdmins() {
+      const row = await d1
+        .prepare(`SELECT COUNT(*) AS count FROM users WHERE role = 'ADMIN' AND is_active = 1`)
+        .first();
+      return Number(row?.count || 0);
+    },
+
+    async createUserWithShop({ username, displayName, passwordHash, passwordSalt, shopName, role }) {
       const cleanUser = String(username || '').trim().toLowerCase();
       const cleanDisplay = String(displayName || cleanUser).trim();
       const cleanShop = String(shopName || `ร้านของ ${cleanDisplay}`).trim();
       const now = getBangkokIsoNow();
 
+      // First user on the platform automatically becomes ADMIN if no admin exists yet
+      let assignedRole = role === 'ADMIN' ? 'ADMIN' : 'SELLER';
+      if (!role) {
+        const adminCount = await this.countAdmins();
+        if (adminCount === 0) {
+          assignedRole = 'ADMIN';
+        }
+      }
+
       const userRes = await d1
         .prepare(
-          'INSERT INTO users (username, display_name, password_hash, password_salt, created_at) VALUES (?, ?, ?, ?, ?)'
+          'INSERT INTO users (username, display_name, password_hash, password_salt, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)'
         )
-        .bind(cleanUser, cleanDisplay, passwordHash, passwordSalt, now)
+        .bind(cleanUser, cleanDisplay, passwordHash, passwordSalt, assignedRole, now)
         .run();
       const userId = Number(userRes.meta?.last_row_id);
 
@@ -145,7 +166,9 @@ export function createD1Repository(d1, env = {}) {
       const slug = `sh_${randomHex(8)}`;
       const now = getBangkokIsoNow();
       const res = await d1
-        .prepare('INSERT INTO shops (owner_user_id, name, webhook_slug, created_at) VALUES (?, ?, ?, ?)')
+        .prepare(
+          'INSERT INTO shops (owner_user_id, name, webhook_slug, is_active, created_at) VALUES (?, ?, ?, 1, ?)'
+        )
         .bind(Number(ownerUserId), cleanName, slug, now)
         .run();
       const shopId = Number(res.meta?.last_row_id);
@@ -154,13 +177,24 @@ export function createD1Repository(d1, env = {}) {
     },
 
     async getShopById(shopId) {
-      const row = await d1.prepare('SELECT * FROM shops WHERE id = ?').bind(Number(shopId)).first();
+      const row = await d1
+        .prepare(
+          `SELECT s.*, u.username AS owner_username, u.display_name AS owner_display_name
+           FROM shops s
+           LEFT JOIN users u ON u.id = s.owner_user_id
+           WHERE s.id = ?`
+        )
+        .bind(Number(shopId))
+        .first();
       if (!row) return null;
       return {
         id: Number(row.id),
         ownerUserId: Number(row.owner_user_id),
+        ownerUsername: row.owner_username || '',
+        ownerDisplayName: row.owner_display_name || '',
         name: row.name,
         webhookSlug: row.webhook_slug,
+        isActive: row.is_active !== 0,
         createdAt: row.created_at,
       };
     },
@@ -168,17 +202,11 @@ export function createD1Repository(d1, env = {}) {
     async getShopByWebhookSlug(slug) {
       if (!slug) return null;
       const row = await d1
-        .prepare('SELECT * FROM shops WHERE webhook_slug = ?')
+        .prepare('SELECT id FROM shops WHERE webhook_slug = ?')
         .bind(String(slug).trim())
         .first();
       if (!row) return null;
-      return {
-        id: Number(row.id),
-        ownerUserId: Number(row.owner_user_id),
-        name: row.name,
-        webhookSlug: row.webhook_slug,
-        createdAt: row.created_at,
-      };
+      return this.getShopById(Number(row.id));
     },
 
     async findShopByExtensionApiKey(apiKey) {
@@ -191,16 +219,27 @@ export function createD1Repository(d1, env = {}) {
       return this.getShopById(Number(row.shop_id));
     },
 
-    async listShopsForUser(userId) {
-      const { results } = await d1
-        .prepare('SELECT * FROM shops WHERE owner_user_id = ? ORDER BY id ASC')
-        .bind(Number(userId))
-        .all();
+    async listShopsForUser(userId, isAdmin = false) {
+      const query = isAdmin
+        ? `SELECT s.*, u.username AS owner_username, u.display_name AS owner_display_name
+           FROM shops s
+           LEFT JOIN users u ON u.id = s.owner_user_id
+           ORDER BY s.id ASC`
+        : `SELECT s.*, u.username AS owner_username, u.display_name AS owner_display_name
+           FROM shops s
+           LEFT JOIN users u ON u.id = s.owner_user_id
+           WHERE s.owner_user_id = ?
+           ORDER BY s.id ASC`;
+      const stmt = isAdmin ? d1.prepare(query) : d1.prepare(query).bind(Number(userId));
+      const { results } = await stmt.all();
       return (results || []).map((row) => ({
         id: Number(row.id),
         ownerUserId: Number(row.owner_user_id),
+        ownerUsername: row.owner_username || '',
+        ownerDisplayName: row.owner_display_name || '',
         name: row.name,
         webhookSlug: row.webhook_slug,
+        isActive: row.is_active !== 0,
         createdAt: row.created_at,
       }));
     },
@@ -227,12 +266,243 @@ export function createD1Repository(d1, env = {}) {
         await d1.prepare('DELETE FROM sessions WHERE token = ?').bind(row.token).run();
         return null;
       }
-      return this.getUserById(Number(row.user_id));
+      const user = await this.getUserById(Number(row.user_id));
+      if (!user || !user.isActive) return null;
+      return user;
     },
 
     async deleteSession(token) {
       if (!token) return;
       await d1.prepare('DELETE FROM sessions WHERE token = ?').bind(String(token).trim()).run();
+    },
+
+    // ===== PLATFORM ADMIN METHODS =====
+    async getAdminPlatformOverview() {
+      const todayKey = getBangkokDateKey(new Date());
+      const monthPrefix = todayKey.slice(0, 7);
+
+      const [
+        usersRes,
+        shopsRes,
+        txAggRes,
+        todayAggRow,
+        monthAggRow,
+        allTimeAggRow,
+        settingsRes,
+        accountsCountRes,
+      ] = await Promise.all([
+        d1
+          .prepare(
+            `SELECT u.id, u.username, u.display_name, u.role, u.is_active, u.created_at,
+                    COUNT(s.id) AS shop_count
+             FROM users u
+             LEFT JOIN shops s ON s.owner_user_id = u.id
+             GROUP BY u.id
+             ORDER BY u.id ASC`
+          )
+          .all(),
+        d1
+          .prepare(
+            `SELECT s.*, u.username AS owner_username, u.display_name AS owner_display_name, u.is_active AS owner_is_active
+             FROM shops s
+             LEFT JOIN users u ON u.id = s.owner_user_id
+             ORDER BY s.id ASC`
+          )
+          .all(),
+        d1
+          .prepare(
+            `SELECT
+               shop_id,
+               COALESCE(SUM(CASE WHEN status = 'VERIFIED' AND recorded_date = ? THEN amount ELSE 0 END), 0) AS today_revenue,
+               COALESCE(SUM(CASE WHEN status = 'VERIFIED' AND recorded_date LIKE ? THEN amount ELSE 0 END), 0) AS month_revenue,
+               COALESCE(SUM(CASE WHEN status = 'VERIFIED' THEN amount ELSE 0 END), 0) AS all_time_revenue,
+               COUNT(CASE WHEN status = 'VERIFIED' THEN 1 END) AS verified_count,
+               COUNT(CASE WHEN status IN ('DUPLICATE', 'WRONG_ACCOUNT', 'NEEDS_REVIEW', 'INVALID') THEN 1 END) AS alert_count,
+               COUNT(*) AS total_count,
+               MAX(recorded_at) AS last_activity_at
+             FROM transactions
+             GROUP BY shop_id`
+          )
+          .bind(todayKey, `${monthPrefix}%`)
+          .all(),
+        d1
+          .prepare(
+            `SELECT
+               COALESCE(SUM(CASE WHEN status = 'VERIFIED' THEN amount ELSE 0 END), 0) AS revenue,
+               COUNT(CASE WHEN status = 'VERIFIED' THEN 1 END) AS verified_count,
+               COUNT(CASE WHEN status IN ('DUPLICATE', 'WRONG_ACCOUNT', 'NEEDS_REVIEW', 'INVALID') THEN 1 END) AS alert_count
+             FROM transactions WHERE recorded_date = ?`
+          )
+          .bind(todayKey)
+          .first(),
+        d1
+          .prepare(
+            `SELECT
+               COALESCE(SUM(CASE WHEN status = 'VERIFIED' THEN amount ELSE 0 END), 0) AS revenue,
+               COUNT(CASE WHEN status = 'VERIFIED' THEN 1 END) AS verified_count
+             FROM transactions WHERE recorded_date LIKE ?`
+          )
+          .bind(`${monthPrefix}%`)
+          .first(),
+        d1
+          .prepare(
+            `SELECT
+               COALESCE(SUM(CASE WHEN status = 'VERIFIED' THEN amount ELSE 0 END), 0) AS revenue,
+               COUNT(CASE WHEN status = 'VERIFIED' THEN 1 END) AS verified_count,
+               COUNT(*) AS total_count
+             FROM transactions`
+          )
+          .first(),
+        d1
+          .prepare(
+            `SELECT shop_id, key, value FROM shop_settings
+             WHERE key IN ('line_channel_secret', 'line_channel_access_token', 'fb_app_secret', 'fb_page_access_token')`
+          )
+          .all(),
+        d1
+          .prepare(
+            `SELECT shop_id, COUNT(*) AS cnt FROM seller_accounts WHERE is_active = 1 GROUP BY shop_id`
+          )
+          .all(),
+      ]);
+
+      const txByShop = new Map((txAggRes.results || []).map((r) => [Number(r.shop_id), r]));
+      const accByShop = new Map((accountsCountRes.results || []).map((r) => [Number(r.shop_id), Number(r.cnt || 0)]));
+      const cfgByShop = new Map();
+      for (const r of settingsRes.results || []) {
+        const sid = Number(r.shop_id);
+        if (!cfgByShop.has(sid)) cfgByShop.set(sid, {});
+        cfgByShop.get(sid)[r.key] = r.value;
+      }
+
+      const users = (usersRes.results || []).map((u) => ({
+        id: Number(u.id),
+        username: u.username,
+        displayName: u.display_name,
+        role: u.role || 'SELLER',
+        isActive: u.is_active !== 0,
+        shopCount: Number(u.shop_count || 0),
+        createdAt: u.created_at,
+      }));
+
+      const shops = (shopsRes.results || []).map((s) => {
+        const sid = Number(s.id);
+        const agg = txByShop.get(sid);
+        const cfg = cfgByShop.get(sid) || {};
+        return {
+          id: sid,
+          name: s.name,
+          webhookSlug: s.webhook_slug,
+          isActive: s.is_active !== 0,
+          createdAt: s.created_at,
+          ownerUserId: Number(s.owner_user_id),
+          ownerUsername: s.owner_username || '-',
+          ownerDisplayName: s.owner_display_name || '-',
+          ownerIsActive: s.owner_is_active !== 0,
+          todayRevenue: Number(agg?.today_revenue || 0),
+          monthRevenue: Number(agg?.month_revenue || 0),
+          allTimeRevenue: Number(agg?.all_time_revenue || 0),
+          verifiedCount: Number(agg?.verified_count || 0),
+          alertCount: Number(agg?.alert_count || 0),
+          totalCount: Number(agg?.total_count || 0),
+          lastActivityAt: agg?.last_activity_at || '',
+          hasLineConfigured: Boolean(cfg.line_channel_secret && cfg.line_channel_access_token),
+          hasFbConfigured: Boolean(cfg.fb_app_secret && cfg.fb_page_access_token),
+          bankAccountCount: accByShop.get(sid) || 0,
+        };
+      });
+
+      return {
+        kpis: {
+          totalShops: shops.length,
+          activeShops: shops.filter((s) => s.isActive).length,
+          totalUsers: users.length,
+          adminUsers: users.filter((u) => u.role === 'ADMIN').length,
+          todayRevenue: Number(todayAggRow?.revenue || 0),
+          todayVerifiedCount: Number(todayAggRow?.verified_count || 0),
+          todayAlertCount: Number(todayAggRow?.alert_count || 0),
+          monthRevenue: Number(monthAggRow?.revenue || 0),
+          monthVerifiedCount: Number(monthAggRow?.verified_count || 0),
+          allTimeRevenue: Number(allTimeAggRow?.revenue || 0),
+          allTimeVerifiedCount: Number(allTimeAggRow?.verified_count || 0),
+          allTimeTotalCount: Number(allTimeAggRow?.total_count || 0),
+        },
+        shops,
+        users,
+      };
+    },
+
+    async updateUserAdmin(userId, patch) {
+      const uid = Number(userId);
+      const existing = await d1.prepare('SELECT * FROM users WHERE id = ?').bind(uid).first();
+      if (!existing) return null;
+
+      const nextDisplay =
+        patch.displayName !== undefined ? String(patch.displayName).trim() : existing.display_name;
+      const nextRole =
+        patch.role !== undefined ? (patch.role === 'ADMIN' ? 'ADMIN' : 'SELLER') : existing.role || 'SELLER';
+      const nextActive =
+        patch.isActive !== undefined ? (patch.isActive ? 1 : 0) : existing.is_active ?? 1;
+      const nextHash = patch.passwordHash || existing.password_hash;
+      const nextSalt = patch.passwordSalt || existing.password_salt;
+
+      await d1
+        .prepare(
+          `UPDATE users
+           SET display_name = ?, role = ?, is_active = ?, password_hash = ?, password_salt = ?
+           WHERE id = ?`
+        )
+        .bind(nextDisplay, nextRole, nextActive, nextHash, nextSalt, uid)
+        .run();
+
+      if (nextActive === 0) {
+        await d1.prepare('DELETE FROM sessions WHERE user_id = ?').bind(uid).run();
+      }
+      return this.getUserById(uid);
+    },
+
+    async deleteUserAdmin(userId) {
+      const uid = Number(userId);
+      const userShops = await this.listShopsForUser(uid, false);
+      for (const s of userShops) {
+        await this.deleteShopAdmin(s.id);
+      }
+      await d1.prepare('DELETE FROM sessions WHERE user_id = ?').bind(uid).run();
+      const res = await d1.prepare('DELETE FROM users WHERE id = ?').bind(uid).run();
+      return Number(res.meta?.changes || 0) > 0;
+    },
+
+    async updateShopAdmin(shopId, patch) {
+      const sid = Number(shopId);
+      const existing = await d1.prepare('SELECT * FROM shops WHERE id = ?').bind(sid).first();
+      if (!existing) return null;
+
+      const nextName = patch.name !== undefined ? String(patch.name).trim() : existing.name;
+      const nextActive =
+        patch.isActive !== undefined ? (patch.isActive ? 1 : 0) : existing.is_active ?? 1;
+
+      await d1
+        .prepare('UPDATE shops SET name = ?, is_active = ? WHERE id = ?')
+        .bind(nextName, nextActive, sid)
+        .run();
+
+      if (patch.name !== undefined) {
+        await this.updateSettings(sid, { shopName: nextName });
+      }
+      return this.getShopById(sid);
+    },
+
+    async deleteShopAdmin(shopId) {
+      const sid = Number(shopId);
+      await d1.batch([
+        d1.prepare('DELETE FROM transactions WHERE shop_id = ?').bind(sid),
+        d1.prepare('DELETE FROM seller_accounts WHERE shop_id = ?').bind(sid),
+        d1.prepare('DELETE FROM categories WHERE shop_id = ?').bind(sid),
+        d1.prepare('DELETE FROM webhook_logs WHERE shop_id = ?').bind(sid),
+        d1.prepare('DELETE FROM shop_settings WHERE shop_id = ?').bind(sid),
+        d1.prepare('DELETE FROM shops WHERE id = ?').bind(sid),
+      ]);
+      return true;
     },
 
     // ===== PER-SHOP SETTINGS =====

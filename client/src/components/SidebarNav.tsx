@@ -10,10 +10,11 @@ import {
   Store,
   Plus,
   LogOut,
+  Crown,
 } from 'lucide-react';
 import type { AuthUser, RemoteSlipApiHealth, ShopInfo } from '../types';
 
-export type NavKey = 'overview' | 'transactions' | 'line-plugin' | 'settings';
+export type NavKey = 'overview' | 'transactions' | 'line-plugin' | 'settings' | 'admin';
 
 interface SidebarNavProps {
   active: NavKey;
@@ -51,6 +52,14 @@ export function SidebarNav({
   alertCount,
   slipApiHealth,
 }: SidebarNavProps) {
+  const isAdmin = user.role === 'ADMIN';
+  const navItems: Array<{ key: NavKey; label: string; shortLabel: string; icon: typeof LayoutDashboard }> = [
+    ...NAV_ITEMS,
+    ...(isAdmin
+      ? [{ key: 'admin' as NavKey, label: 'ดูแลระบบรวม (Admin)', shortLabel: 'Admin', icon: Crown }]
+      : []),
+  ];
+
   return (
     <>
       {/* Desktop Ledger Rail */}
@@ -60,9 +69,16 @@ export function SidebarNav({
             <div className="w-9 h-9 rounded-[10px] bg-[#0D6B4E] flex items-center justify-center shrink-0 shadow-sm">
               <ShieldCheck className="w-5 h-5 text-white" strokeWidth={2.2} />
             </div>
-            <div className="min-w-0">
-              <div className="text-[16px] font-bold tracking-tight text-white leading-tight">
-                SlipFlow
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[16px] font-bold tracking-tight text-white leading-tight">
+                  SlipFlow
+                </span>
+                {isAdmin && (
+                  <span className="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 text-[10px] font-bold">
+                    ADMIN
+                  </span>
+                )}
               </div>
               <div className="text-[11.5px] text-[#9BC1B2] truncate mt-0.5">
                 ผู้ใช้: {user.username}
@@ -75,7 +91,7 @@ export function SidebarNav({
             <div className="flex items-center justify-between text-[11.5px] text-[#9BC1B2]">
               <span className="inline-flex items-center gap-1">
                 <Store className="w-3.5 h-3.5" />
-                ร้านค้าที่กำลังจัดการ
+                {isAdmin ? `สลับดูร้านค้า (${shops.length})` : 'ร้านค้าที่กำลังจัดการ'}
               </span>
               <button
                 type="button"
@@ -95,6 +111,7 @@ export function SidebarNav({
               {shops.map((s) => (
                 <option key={s.id} value={s.id} className="text-[#10201A] bg-white">
                   {s.name}
+                  {isAdmin && s.ownerUsername ? ` (@${s.ownerUsername})` : ''}
                 </option>
               ))}
             </select>
@@ -116,7 +133,7 @@ export function SidebarNav({
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1" aria-label="เมนูหลัก">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = active === item.key;
             return (
@@ -227,10 +244,12 @@ export function SidebarNav({
       </header>
 
       <nav
-        className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-[#E3E8E5] grid grid-cols-4 px-1 py-1.5 shadow-[0_-2px_10px_rgba(16,32,26,0.06)]"
+        className={`lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-[#E3E8E5] grid ${
+          isAdmin ? 'grid-cols-5' : 'grid-cols-4'
+        } px-1 py-1.5 shadow-[0_-2px_10px_rgba(16,32,26,0.06)]`}
         aria-label="เมนูหลักมือถือ"
       >
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = active === item.key;
           return (

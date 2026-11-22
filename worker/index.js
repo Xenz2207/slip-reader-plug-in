@@ -61,10 +61,11 @@ async function requireUserAndShop(c, repo) {
   const user = await repo.getSessionUser(token);
   if (!user) {
     return {
-      errorResponse: c.json({ error: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', authRequired: true }, 401),
+      errorResponse: c.json({ error: 'เซสชันหมดอายุหรือบัญชีถูกระงับ กรุณาเข้าสู่ระบบใหม่', authRequired: true }, 401),
     };
   }
-  const shops = await repo.listShopsForUser(user.id);
+  const isAdmin = user.role === 'ADMIN';
+  const shops = await repo.listShopsForUser(user.id, isAdmin);
   if (shops.length === 0) {
     const created = await repo.createShop({ ownerUserId: user.id, name: `ร้านของ ${user.displayName}` });
     shops.push(created);
@@ -82,7 +83,18 @@ async function requireUserAndShop(c, repo) {
     activeShop = matched;
   }
 
-  return { user, shops, shop: activeShop, shopId: activeShop.id };
+  return { user, isAdmin, shops, shop: activeShop, shopId: activeShop.id };
+}
+
+async function requireAdmin(c, repo) {
+  const ctx = await requireUserAndShop(c, repo);
+  if (ctx.errorResponse) return ctx;
+  if (!ctx.isAdmin) {
+    return {
+      errorResponse: c.json({ error: 'เฉพาะผู้ดูแลระบบ (Super Admin) เท่านั้นที่เข้าถึงส่วนนี้ได้' }, 403),
+    };
+  }
+  return ctx;
 }
 
 async function resolveWebhookShop(c, repo) {
@@ -175,6 +187,9 @@ app.post('/api/auth/login', async (c) => {
   if (!row) {
     return c.json({ error: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง' }, 401);
   }
+  if (row.is_active === 0) {
+    return c.json({ error: 'บัญชีนี้ถูกระงับการใช้งานชั่วคราว กรุณาติดต่อผู้ดูแลระบบ' }, 403);
+  }
 
   const valid = await verifyPassword(password, row.password_hash, row.password_salt);
   if (!valid) {
@@ -182,7 +197,7 @@ app.post('/api/auth/login', async (c) => {
   }
 
   const user = await repo.getUserById(row.id);
-  const shops = await repo.listShopsForUser(user.id);
+  const shops = await repo.listShopsForUser(user.id, user.role === 'ADMIN');
   const token = await repo.createSession(user.id);
 
   return c.json({
@@ -230,8 +245,123 @@ app.post('/api/shops', async (c) => {
     return c.json({ error: 'กรุณาระบุชื่อร้านค้าใหม่' }, 400);
   }
   const shop = await repo.createShop({ ownerUserId: ctx.user.id, name });
-  const shops = await repo.listShopsForUser(ctx.user.id);
+  const shops = await repo.listShopsForUser(ctx.user.id, ctx.isAdmin);
   return c.json({ shop, shops }, 201);
+});
+
+// ===== PLATFORM SUPER-ADMIN ENDPOINTS =====
+app.get('/api/admin/overview', async (c) => {
+  const repo = getRepo(c);
+  const ctx = await requireAdmin(c, repo);
+  if (ctx.errorResponse) return ctx.errorResponse;
+  return c.json(await repo.getAdminPlatformOverview());
+});
+
+app.post('/api/admin/users', async (c) => {
+  const repo = getRepo(c);
+  const ctx = await requireAdmin(c, repo);
+  if (ctx.errorResponse) return ctx.errorResponse;
+
+  const body = await c.req.json().catch(() => ({}));
+  const username = String(body.username || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  const shopName = String(body.shopName || '').trim();
+  const displayName = String(body.displayName || shopName || username).trim();
+  const role = body.role === 'ADMIN' ? 'ADMIN' : 'SELLER';
+
+  if (!username || username.length < 3) {
+    return c.json({ error: 'ชื่อผู้ใช้งานต้องมีอย่างน้อย 3 ตัวอักษร' }, 400);
+  }
+  if (!password || password.length < 6) {
+    return c.json({ error: 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร' }, 400);
+  }
+  if (!shopName) {
+    return c.json({ error: 'กรุณาระบุชื่อร้านค้าเริ่มต้น' }, 400);
+  }
+  const existing = await repo.findUserByUsername(username);
+  if (existing) {
+    return c.json({ error: 'มีชื่อผู้ใช้งานนี้ในระบบแล้ว' }, 409);
+  }
+
+  const { hash, salt } = await hashPassword(password);
+  const created = await repo.createUserWithShop({
+    username,
+    displayName,
+    passwordHash: hash,
+    passwordSalt: salt,
+    shopName,
+    role,
+  });
+  return c.json({ ok: true, ...created }, 201);
+});
+
+app.patch('/api/admin/users/:id', async (c) => {
+  const repo = getRepo(c);
+  const ctx = await requireAdmin(c, repo);
+  if (ctx.errorResponse) return ctx.errorResponse;
+
+  const targetId = Number(c.req.param('id'));
+  const body = await c.req.json().catch(() => ({}));
+
+  if (targetId === ctx.user.id && (body.isActive === false || body.role === 'SELLER')) {
+    return c.json({ error: 'ไม่สามารถระงับหรือลดสิทธิ์บัญชีแอดมินของตัวเองได้' }, 400);
+  }
+
+  const patch = {
+    displayName: body.displayName,
+    role: body.role,
+    isActive: body.isActive,
+  };
+
+  if (body.newPassword && String(body.newPassword).trim()) {
+    if (String(body.newPassword).length < 6) {
+      return c.json({ error: 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร' }, 400);
+    }
+    const { hash, salt } = await hashPassword(String(body.newPassword));
+    patch.passwordHash = hash;
+    patch.passwordSalt = salt;
+  }
+
+  const updated = await repo.updateUserAdmin(targetId, patch);
+  if (!updated) return c.json({ error: 'ไม่พบบัญชีผู้ใช้' }, 404);
+  return c.json({ user: updated });
+});
+
+app.delete('/api/admin/users/:id', async (c) => {
+  const repo = getRepo(c);
+  const ctx = await requireAdmin(c, repo);
+  if (ctx.errorResponse) return ctx.errorResponse;
+
+  const targetId = Number(c.req.param('id'));
+  if (targetId === ctx.user.id) {
+    return c.json({ error: 'ไม่สามารถลบบัญชีแอดมินที่กำลังล็อกอินอยู่ได้' }, 400);
+  }
+  const ok = await repo.deleteUserAdmin(targetId);
+  if (!ok) return c.json({ error: 'ไม่พบบัญชีผู้ใช้' }, 404);
+  return c.json({ ok: true });
+});
+
+app.patch('/api/admin/shops/:id', async (c) => {
+  const repo = getRepo(c);
+  const ctx = await requireAdmin(c, repo);
+  if (ctx.errorResponse) return ctx.errorResponse;
+
+  const body = await c.req.json().catch(() => ({}));
+  const updated = await repo.updateShopAdmin(c.req.param('id'), {
+    name: body.name,
+    isActive: body.isActive,
+  });
+  if (!updated) return c.json({ error: 'ไม่พบร้านค้า' }, 404);
+  return c.json({ shop: updated });
+});
+
+app.delete('/api/admin/shops/:id', async (c) => {
+  const repo = getRepo(c);
+  const ctx = await requireAdmin(c, repo);
+  if (ctx.errorResponse) return ctx.errorResponse;
+
+  await repo.deleteShopAdmin(c.req.param('id'));
+  return c.json({ ok: true });
 });
 
 // ===== LINE OA WEBHOOK (PER-SHOP ISOLATED) =====
@@ -240,6 +370,9 @@ async function handleLineWebhook(c) {
   const shop = await resolveWebhookShop(c, repo);
   if (!shop) {
     return c.json({ error: 'Shop webhook not found' }, 404);
+  }
+  if (!shop.isActive) {
+    return c.json({ error: 'Shop is temporarily suspended' }, 403);
   }
   const shopId = shop.id;
   const settings = await repo.getSettings(shopId);
@@ -347,6 +480,7 @@ async function handleMessengerPost(c) {
   const repo = getRepo(c);
   const shop = await resolveWebhookShop(c, repo);
   if (!shop) return c.json({ error: 'Shop webhook not found' }, 404);
+  if (!shop.isActive) return c.json({ error: 'Shop is temporarily suspended' }, 403);
   const shopId = shop.id;
 
   const settings = await repo.getSettings(shopId);
@@ -437,7 +571,9 @@ app.post('/api/messenger/webhook', handleMessengerPost);
 async function resolveExtensionShop(c, repo) {
   const apiKey = c.req.header('x-api-key') || '';
   if (!apiKey) return null;
-  return repo.findShopByExtensionApiKey(apiKey);
+  const shop = await repo.findShopByExtensionApiKey(apiKey);
+  if (!shop || !shop.isActive) return null;
+  return shop;
 }
 
 app.get('/api/extension/ping', async (c) => {
