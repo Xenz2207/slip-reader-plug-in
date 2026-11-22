@@ -119,7 +119,24 @@ export interface CategoryItem {
   isDefault: boolean;
 }
 
+export interface AuthUser {
+  id: number;
+  username: string;
+  displayName: string;
+  createdAt: string;
+}
+
+export interface ShopInfo {
+  id: number;
+  ownerUserId: number;
+  name: string;
+  webhookSlug: string;
+  createdAt: string;
+}
+
 export interface PublicSettings {
+  shopId: number;
+  webhookSlug: string;
   shopName: string;
   slipApiBaseUrl: string;
   lineAdminNotifyTargetId: string;

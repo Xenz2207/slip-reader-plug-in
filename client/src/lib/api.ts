@@ -1,20 +1,55 @@
 import type {
+  AuthUser,
   CategoryItem,
   DashboardSummary,
   PublicSettings,
   RemoteSlipApiHealth,
   SellerAccount,
+  ShopInfo,
   ThaiBankOption,
   Transaction,
   WebhookLog,
 } from '../types';
 
+const TOKEN_KEY = 'slipflow_auth_token';
+const SHOP_ID_KEY = 'slipflow_active_shop_id';
+
+export const authStorage = {
+  getToken(): string {
+    return localStorage.getItem(TOKEN_KEY) || '';
+  },
+  setToken(token: string) {
+    localStorage.setItem(TOKEN_KEY, token);
+  },
+  getShopId(): number | null {
+    const raw = localStorage.getItem(SHOP_ID_KEY);
+    const num = Number(raw);
+    return Number.isFinite(num) && num > 0 ? num : null;
+  },
+  setShopId(shopId: number) {
+    localStorage.setItem(SHOP_ID_KEY, String(shopId));
+  },
+  clear() {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(SHOP_ID_KEY);
+  },
+};
+
 function getHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const key = localStorage.getItem('slipflow_dashboard_key') || '';
+  const token = authStorage.getToken();
+  const shopId = authStorage.getShopId();
   return {
-    ...(key ? { 'X-Dashboard-Key': key } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(shopId ? { 'X-Shop-Id': String(shopId) } : {}),
     ...extra,
   };
+}
+
+export class ApiAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ApiAuthError';
+  }
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -28,6 +63,9 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     ),
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && data.authRequired) {
+    throw new ApiAuthError(data.error || 'กรุณาเข้าสู่ระบบ');
+  }
   if (!res.ok) {
     throw new Error(data.error || data.message || `Request failed (${res.status})`);
   }
@@ -35,6 +73,47 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  register(payload: { username: string; password: string; shopName: string; displayName?: string }) {
+    return requestJson<{
+      ok: boolean;
+      token: string;
+      user: AuthUser;
+      shops: ShopInfo[];
+      activeShopId: number;
+    }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  login(payload: { username: string; password: string }) {
+    return requestJson<{
+      ok: boolean;
+      token: string;
+      user: AuthUser;
+      shops: ShopInfo[];
+      activeShopId: number;
+    }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  logout() {
+    return requestJson<{ ok: boolean }>('/api/auth/logout', { method: 'POST' });
+  },
+
+  getMe() {
+    return requestJson<{ user: AuthUser; shops: ShopInfo[]; activeShopId: number }>('/api/auth/me');
+  },
+
+  createShop(payload: { name: string }) {
+    return requestJson<{ shop: ShopInfo; shops: ShopInfo[] }>('/api/shops', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   getSummary(days = 7) {
     return requestJson<DashboardSummary>(`/api/summary?days=${days}`);
   },
@@ -188,8 +267,10 @@ export const api = {
     for (const [k, v] of Object.entries(params)) {
       if (v && v !== 'ALL') q.set(k, v);
     }
-    const key = localStorage.getItem('slipflow_dashboard_key') || '';
-    if (key) q.set('dashboardKey', key);
+    const token = authStorage.getToken();
+    const shopId = authStorage.getShopId();
+    if (token) q.set('token', token);
+    if (shopId) q.set('shopId', String(shopId));
     const qs = q.toString();
     return `/api/transactions/export.csv${qs ? `?${qs}` : ''}`;
   },

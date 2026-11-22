@@ -1,60 +1,74 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import cors from 'cors';
-import { createDatabase } from './db.js';
-import { createSlipReaderClient } from './services/slipReaderClient.js';
-import { createLineClient } from './services/lineService.js';
-import { createMessengerClient } from './services/messengerService.js';
-import { SseHub, sseHub } from './services/sseHub.js';
-import { createLineWebhookRouter } from './routes/lineWebhook.js';
-import { createMessengerWebhookRouter } from './routes/messengerWebhook.js';
-import { createApiRouter } from './routes/api.js';
+import { config } from './config.js';
+import { createD1SqliteAdapter } from './d1SqliteAdapter.js';
+import { createD1Repository } from '../worker/db.js';
+import workerApp from '../worker/index.js';
 
 export function createApp(options = {}) {
-  const db = options.db || createDatabase(options.dbPath);
-  const slipClient = options.slipClient || createSlipReaderClient();
-  const lineClient = options.lineClient || createLineClient();
-  const messengerClient = options.messengerClient || createMessengerClient();
-  const hub = options.hub || (options.db ? new SseHub() : sseHub);
+  const d1 = options.d1 || createD1SqliteAdapter(options.dbPath || config.databasePath);
+  const env = {
+    DB: d1,
+    SLIP_API_BASE_URL: config.slipApiBaseUrl,
+    SLIP_API_TIMEOUT_MS: String(config.slipApiTimeoutMs),
+    __mockSlipVerify: options.slipClient ? (args) => options.slipClient.verifySlipImage(args) : null,
+    __mockLineClient: options.lineClient || null,
+    __mockMessengerClient: options.messengerClient || null,
+  };
+  const repo = createD1Repository(d1, env);
 
   const app = express();
   app.set('trust proxy', 1);
 
-  // CORS allowing local dev, Chrome Extensions, and LINE OA Manager web chat
-  app.use(
-    cors({
-      origin: (origin, cb) => {
-        if (!origin) return cb(null, true);
-        if (
-          origin.startsWith('http://localhost:') ||
-          origin.startsWith('http://127.0.0.1:') ||
-          origin.startsWith('chrome-extension://') ||
-          origin === 'https://chat.line.biz' ||
-          origin === 'https://manager.line.biz'
-        ) {
-          return cb(null, true);
+  // Forward all /api/* requests directly to the Hono Cloudflare Worker app
+  app.use('/api', express.raw({ type: '*/*', limit: '16mb' }), async (req, res) => {
+    try {
+      const protocol = req.protocol || 'http';
+      const host = req.get('host') || `localhost:${config.port}`;
+      const fullUrl = `${protocol}://${host}${req.originalUrl}`;
+
+      const headers = new Headers();
+      for (const [k, v] of Object.entries(req.headers)) {
+        if (Array.isArray(v)) {
+          headers.set(k, v.join(', '));
+        } else if (typeof v === 'string') {
+          headers.set(k, v);
         }
-        return cb(null, true);
-      },
-      credentials: true,
-    })
-  );
+      }
 
-  // Mount LINE & Facebook Messenger webhooks BEFORE global express.json() so raw body stays intact for HMAC checks
-  app.use('/api/line/webhook', createLineWebhookRouter({ db, slipClient, lineClient, hub }));
-  app.use(
-    '/api/messenger/webhook',
-    createMessengerWebhookRouter({ db, slipClient, messengerClient, lineClient, hub })
-  );
+      const hasBody = !['GET', 'HEAD'].includes(req.method.toUpperCase());
+      const rawBody =
+        hasBody && Buffer.isBuffer(req.body) && req.body.length > 0 ? req.body : undefined;
 
-  // JSON & form parsing for normal API routes (15mb allows base64 slip uploads from Chrome Extension)
-  app.use(express.json({ limit: '15mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+      const webReq = new Request(fullUrl, {
+        method: req.method,
+        headers,
+        body: rawBody,
+      });
 
-  app.use('/api', createApiRouter({ db, slipClient, lineClient, messengerClient, hub }));
+      const pendingTasks = [];
+      const executionCtx = {
+        waitUntil(promise) {
+          pendingTasks.push(Promise.resolve(promise).catch(() => {}));
+        },
+      };
 
-  // Serve built React frontend in production / single-service mode
+      const webRes = await workerApp.fetch(webReq, env, executionCtx);
+      if (pendingTasks.length > 0) {
+        await Promise.all(pendingTasks);
+      }
+      res.status(webRes.status);
+      webRes.headers.forEach((val, key) => {
+        res.setHeader(key, val);
+      });
+      const buf = Buffer.from(await webRes.arrayBuffer());
+      res.send(buf);
+    } catch (err) {
+      res.status(500).json({ error: err?.message || 'Internal Server Error' });
+    }
+  });
+
   const clientDistDir = path.resolve(process.cwd(), 'dist/client');
   if (fs.existsSync(clientDistDir)) {
     app.use(express.static(clientDistDir));
@@ -63,13 +77,5 @@ export function createApp(options = {}) {
     });
   }
 
-  // Centralized error handler (e.g. multer size limit)
-  app.use((err, _req, res, _next) => {
-    if (err?.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ error: 'ไฟล์รูปภาพใหญ่เกิน 12MB กรุณาย่อขนาดก่อนอัปโหลด' });
-    }
-    res.status(500).json({ error: err?.message || 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์' });
-  });
-
-  return { app, db, slipClient, lineClient, hub };
+  return { app, db: d1, repo };
 }

@@ -105,8 +105,9 @@ export function LinePluginPage({
   }, [settings]);
 
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001';
-  const lineWebhookUrl = `${origin}/api/line/webhook`;
-  const fbWebhookUrl = `${origin}/api/messenger/webhook`;
+  const slugSuffix = settings?.webhookSlug ? `/${settings.webhookSlug}` : '';
+  const lineWebhookUrl = `${origin}/api/line/webhook${slugSuffix}`;
+  const fbWebhookUrl = `${origin}/api/messenger/webhook${slugSuffix}`;
 
   function copyText(id: string, text: string) {
     navigator.clipboard.writeText(text);

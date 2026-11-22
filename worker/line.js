@@ -128,7 +128,10 @@ export function buildSlipFlexMessageWorker(tx, settings = {}) {
   };
 }
 
-export async function sendLineReply(replyToken, messages, accessToken) {
+export async function sendLineReply(replyToken, messages, accessToken, mockClient) {
+  if (mockClient?.replyMessage) {
+    return mockClient.replyMessage(replyToken, messages, accessToken);
+  }
   const res = await fetch('https://api.line.me/v2/bot/message/reply', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
@@ -140,7 +143,10 @@ export async function sendLineReply(replyToken, messages, accessToken) {
   }
 }
 
-export async function sendLinePush(to, messages, accessToken) {
+export async function sendLinePush(to, messages, accessToken, mockClient) {
+  if (mockClient?.pushMessage) {
+    return mockClient.pushMessage(to, messages, accessToken);
+  }
   const res = await fetch('https://api.line.me/v2/bot/message/push', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
@@ -152,7 +158,14 @@ export async function sendLinePush(to, messages, accessToken) {
   }
 }
 
-async function downloadLineImageBlob(messageId, accessToken) {
+async function downloadLineImageBlob(messageId, accessToken, mockClient) {
+  if (mockClient?.downloadImageContent) {
+    const r = await mockClient.downloadImageContent(messageId, accessToken);
+    return {
+      blob: new Blob([r.buffer], { type: r.mimeType || 'image/jpeg' }),
+      filename: r.filename || `line_${messageId}.jpg`,
+    };
+  }
   const res = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(messageId)}/content`, {
     headers: { Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(30000),
@@ -164,7 +177,10 @@ async function downloadLineImageBlob(messageId, accessToken) {
   return { blob, filename: `line_${messageId}.${ext}` };
 }
 
-async function fetchLineDisplayName({ userId, sourceType, sourceId, accessToken }) {
+async function fetchLineDisplayName({ userId, sourceType, sourceId, accessToken, mockClient }) {
+  if (mockClient?.fetchProfile) {
+    return mockClient.fetchProfile({ userId, sourceType, sourceId, accessToken });
+  }
   if (!userId || !accessToken) return '';
   let endpoint = `https://api.line.me/v2/bot/profile/${encodeURIComponent(userId)}`;
   if (sourceType === 'group' && sourceId) {
@@ -185,8 +201,15 @@ async function fetchLineDisplayName({ userId, sourceType, sourceId, accessToken 
   }
 }
 
-export async function processLineEventWorker({ event, repo, timeoutMs }) {
-  const settings = await repo.getSettings();
+export async function processLineEventWorker({
+  shopId,
+  event,
+  repo,
+  timeoutMs,
+  mockSlipVerify,
+  mockLineClient,
+}) {
+  const settings = await repo.getSettings(shopId);
   const sourceType = event?.source?.type || 'user';
   const userId = event?.source?.userId || '';
   const sourceId = event?.source?.groupId || event?.source?.roomId || userId || '';
@@ -200,13 +223,14 @@ export async function processLineEventWorker({ event, repo, timeoutMs }) {
           [
             {
               type: 'text',
-              text: `ข้อมูลห้องแชตนี้ (สำหรับตั้งค่าแจ้งเตือนแอดมิน):\n• ประเภทห้อง: ${sourceType}\n• Target ID: ${sourceId}\n• User ID: ${userId || '-'}`,
+              text: `ข้อมูลห้องแชตนี้ (${settings.shopName}):\n• ประเภทห้อง: ${sourceType}\n• Target ID: ${sourceId}\n• User ID: ${userId || '-'}`,
             },
           ],
-          settings.lineChannelAccessToken
+          settings.lineChannelAccessToken,
+          mockLineClient
         );
       }
-      await repo.logWebhookEvent({
+      await repo.logWebhookEvent(shopId, {
         eventType: 'message:text',
         sourceType,
         sourceId,
@@ -223,7 +247,7 @@ export async function processLineEventWorker({ event, repo, timeoutMs }) {
 
   const messageId = event.message.id;
   if (!settings.lineChannelAccessToken) {
-    await repo.logWebhookEvent({
+    await repo.logWebhookEvent(shopId, {
       eventType: 'message:image',
       sourceType,
       sourceId,
@@ -236,12 +260,19 @@ export async function processLineEventWorker({ event, repo, timeoutMs }) {
   }
 
   const [img, customerName] = await Promise.all([
-    downloadLineImageBlob(messageId, settings.lineChannelAccessToken),
-    fetchLineDisplayName({ userId, sourceType, sourceId, accessToken: settings.lineChannelAccessToken }),
+    downloadLineImageBlob(messageId, settings.lineChannelAccessToken, mockLineClient),
+    fetchLineDisplayName({
+      userId,
+      sourceType,
+      sourceId,
+      accessToken: settings.lineChannelAccessToken,
+      mockLineClient,
+    }),
   ]);
 
   const result = await verifyAndRecordSlipWorker({
     repo,
+    shopId,
     blob: img.blob,
     filename: img.filename,
     channel: 'LINE_BOT',
@@ -252,10 +283,11 @@ export async function processLineEventWorker({ event, repo, timeoutMs }) {
     lineMessageId: messageId,
     skipSaveIfNonSlip: settings.lineIgnoreNonSlip,
     timeoutMs,
+    mockSlipVerify,
   });
 
   if (!result.ok) {
-    await repo.logWebhookEvent({
+    await repo.logWebhookEvent(shopId, {
       eventType: 'message:image',
       sourceType,
       sourceId,
@@ -269,7 +301,7 @@ export async function processLineEventWorker({ event, repo, timeoutMs }) {
   }
 
   if (result.isNonSlip && !result.transaction) {
-    await repo.logWebhookEvent({
+    await repo.logWebhookEvent(shopId, {
       eventType: 'message:image',
       sourceType,
       sourceId,
@@ -290,12 +322,12 @@ export async function processLineEventWorker({ event, repo, timeoutMs }) {
   let replyDetail = 'ปิดตอบกลับอัตโนมัติ';
   if (shouldReply) {
     try {
-      await sendLineReply(event.replyToken, [flexMsg], settings.lineChannelAccessToken);
+      await sendLineReply(event.replyToken, [flexMsg], settings.lineChannelAccessToken, mockLineClient);
       replyDetail = 'ส่ง Flex Message สำเร็จ';
     } catch {
       if (sourceId) {
         try {
-          await sendLinePush(sourceId, [flexMsg], settings.lineChannelAccessToken);
+          await sendLinePush(sourceId, [flexMsg], settings.lineChannelAccessToken, mockLineClient);
           replyDetail = 'ส่ง Flex Message (Push Fallback)';
         } catch (err) {
           replyDetail = `บันทึกสำเร็จแต่ตอบกลับ LINE ไม่สำเร็จ: ${err.message}`;
@@ -313,14 +345,14 @@ export async function processLineEventWorker({ event, repo, timeoutMs }) {
 
   if (shouldNotifyAdmin) {
     try {
-      await sendLinePush(adminTarget, [flexMsg], settings.lineChannelAccessToken);
+      await sendLinePush(adminTarget, [flexMsg], settings.lineChannelAccessToken, mockLineClient);
       replyDetail += ' · แจ้งเตือนแอดมินแล้ว';
     } catch (err) {
       replyDetail += ` · แจ้งเตือนแอดมินไม่สำเร็จ (${err.message})`;
     }
   }
 
-  await repo.logWebhookEvent({
+  await repo.logWebhookEvent(shopId, {
     eventType: 'message:image',
     sourceType,
     sourceId,

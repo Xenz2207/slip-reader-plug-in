@@ -13,6 +13,7 @@ function mapTransaction(row) {
   if (!row) return null;
   return {
     id: Number(row.id),
+    shopId: Number(row.shop_id || 1),
     transRef: row.trans_ref || '',
     status: row.status,
     channel: row.channel,
@@ -46,28 +47,35 @@ function mapTransaction(row) {
   };
 }
 
+const DEFAULT_CATEGORIES = [
+  ['ขายสินค้า', '#0D6B4E', 1],
+  ['มัดจำออเดอร์', '#0284C7', 0],
+  ['ค่าจัดส่ง', '#7C3AED', 0],
+  ['โอนชำระหน้าร้าน', '#D97706', 0],
+  ['รายรับอื่นๆ', '#475569', 0],
+];
+
 export function createD1Repository(d1, env = {}) {
   const defaultSlipApiUrl = (env.SLIP_API_BASE_URL || 'https://my-slip-reader.onrender.com').replace(/\/+$/, '');
-  let initialized = false;
 
-  async function ensureSeeded() {
-    if (initialized) return;
+  async function ensureShopSeeded(shopId, shopName = 'ร้านค้าของฉัน') {
+    const sid = Number(shopId);
     const now = getBangkokIsoNow();
     const defaults = [
-      ['shop_name', 'ร้านค้าของฉัน'],
+      ['shop_name', shopName],
       ['slip_api_base_url', defaultSlipApiUrl],
-      ['line_channel_secret', env.LINE_CHANNEL_SECRET || ''],
-      ['line_channel_access_token', env.LINE_CHANNEL_ACCESS_TOKEN || ''],
-      ['line_admin_notify_target_id', env.LINE_ADMIN_NOTIFY_TARGET_ID || ''],
+      ['line_channel_secret', ''],
+      ['line_channel_access_token', ''],
+      ['line_admin_notify_target_id', ''],
       ['line_auto_reply_enabled', 'true'],
       ['line_reply_on_error', 'true'],
       ['line_ignore_non_slip', 'true'],
       ['line_notify_admin_on_verified', 'false'],
       ['line_notify_admin_on_alert', 'true'],
       ['line_reply_greeting', 'ได้รับยอดโอนเรียบร้อยแล้ว ขอบคุณที่อุดหนุนครับ'],
-      ['fb_app_secret', env.FB_APP_SECRET || ''],
-      ['fb_page_access_token', env.FB_PAGE_ACCESS_TOKEN || ''],
-      ['fb_verify_token', env.FB_VERIFY_TOKEN || `fbv_${randomHex(12)}`],
+      ['fb_app_secret', ''],
+      ['fb_page_access_token', ''],
+      ['fb_verify_token', `fbv_${randomHex(12)}`],
       ['fb_auto_reply_enabled', 'true'],
       ['fb_reply_on_error', 'true'],
       ['fb_ignore_non_slip', 'true'],
@@ -76,39 +84,188 @@ export function createD1Repository(d1, env = {}) {
       ['check_receiver_account', 'true'],
       ['reject_duplicate_slip', 'true'],
       ['min_amount', '0'],
-      ['extension_api_key', env.EXTENSION_API_KEY || `sf_${randomHex(18)}`],
+      ['extension_api_key', `sf_${randomHex(18)}`],
     ];
 
-    const stmts = defaults.map(([key, val]) =>
-      d1.prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').bind(key, String(val), now)
-    );
+    const stmts = [
+      ...defaults.map(([key, val]) =>
+        d1
+          .prepare('INSERT OR IGNORE INTO shop_settings (shop_id, key, value, updated_at) VALUES (?, ?, ?, ?)')
+          .bind(sid, key, String(val), now)
+      ),
+      ...DEFAULT_CATEGORIES.map(([name, color, isDefault]) =>
+        d1
+          .prepare('INSERT OR IGNORE INTO categories (shop_id, name, color, is_default) VALUES (?, ?, ?, ?)')
+          .bind(sid, name, color, isDefault)
+      ),
+    ];
     await d1.batch(stmts);
-    initialized = true;
   }
 
   return {
-    async getSettings() {
-      await ensureSeeded();
-      const { results } = await d1.prepare('SELECT key, value FROM settings').all();
+    // ===== AUTH & SHOPS =====
+    async findUserByUsername(username) {
+      const clean = String(username || '').trim().toLowerCase();
+      if (!clean) return null;
+      return d1.prepare('SELECT * FROM users WHERE username = ?').bind(clean).first();
+    },
+
+    async getUserById(id) {
+      const row = await d1.prepare('SELECT id, username, display_name, created_at FROM users WHERE id = ?').bind(Number(id)).first();
+      if (!row) return null;
+      return {
+        id: Number(row.id),
+        username: row.username,
+        displayName: row.display_name,
+        createdAt: row.created_at,
+      };
+    },
+
+    async createUserWithShop({ username, displayName, passwordHash, passwordSalt, shopName }) {
+      const cleanUser = String(username || '').trim().toLowerCase();
+      const cleanDisplay = String(displayName || cleanUser).trim();
+      const cleanShop = String(shopName || `ร้านของ ${cleanDisplay}`).trim();
+      const now = getBangkokIsoNow();
+
+      const userRes = await d1
+        .prepare(
+          'INSERT INTO users (username, display_name, password_hash, password_salt, created_at) VALUES (?, ?, ?, ?, ?)'
+        )
+        .bind(cleanUser, cleanDisplay, passwordHash, passwordSalt, now)
+        .run();
+      const userId = Number(userRes.meta?.last_row_id);
+
+      const shop = await this.createShop({ ownerUserId: userId, name: cleanShop });
+      const user = await this.getUserById(userId);
+      return { user, shop };
+    },
+
+    async createShop({ ownerUserId, name }) {
+      const cleanName = String(name || 'ร้านค้าใหม่').trim();
+      const slug = `sh_${randomHex(8)}`;
+      const now = getBangkokIsoNow();
+      const res = await d1
+        .prepare('INSERT INTO shops (owner_user_id, name, webhook_slug, created_at) VALUES (?, ?, ?, ?)')
+        .bind(Number(ownerUserId), cleanName, slug, now)
+        .run();
+      const shopId = Number(res.meta?.last_row_id);
+      await ensureShopSeeded(shopId, cleanName);
+      return this.getShopById(shopId);
+    },
+
+    async getShopById(shopId) {
+      const row = await d1.prepare('SELECT * FROM shops WHERE id = ?').bind(Number(shopId)).first();
+      if (!row) return null;
+      return {
+        id: Number(row.id),
+        ownerUserId: Number(row.owner_user_id),
+        name: row.name,
+        webhookSlug: row.webhook_slug,
+        createdAt: row.created_at,
+      };
+    },
+
+    async getShopByWebhookSlug(slug) {
+      if (!slug) return null;
+      const row = await d1
+        .prepare('SELECT * FROM shops WHERE webhook_slug = ?')
+        .bind(String(slug).trim())
+        .first();
+      if (!row) return null;
+      return {
+        id: Number(row.id),
+        ownerUserId: Number(row.owner_user_id),
+        name: row.name,
+        webhookSlug: row.webhook_slug,
+        createdAt: row.created_at,
+      };
+    },
+
+    async findShopByExtensionApiKey(apiKey) {
+      if (!apiKey) return null;
+      const row = await d1
+        .prepare(`SELECT shop_id FROM shop_settings WHERE key = 'extension_api_key' AND value = ? LIMIT 1`)
+        .bind(String(apiKey).trim())
+        .first();
+      if (!row) return null;
+      return this.getShopById(Number(row.shop_id));
+    },
+
+    async listShopsForUser(userId) {
+      const { results } = await d1
+        .prepare('SELECT * FROM shops WHERE owner_user_id = ? ORDER BY id ASC')
+        .bind(Number(userId))
+        .all();
+      return (results || []).map((row) => ({
+        id: Number(row.id),
+        ownerUserId: Number(row.owner_user_id),
+        name: row.name,
+        webhookSlug: row.webhook_slug,
+        createdAt: row.created_at,
+      }));
+    },
+
+    async createSession(userId) {
+      const token = `sfs_${randomHex(24)}`;
+      const now = new Date();
+      const expires = new Date(now.getTime() + 30 * 86400000);
+      await d1
+        .prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
+        .bind(token, Number(userId), now.toISOString(), expires.toISOString())
+        .run();
+      return token;
+    },
+
+    async getSessionUser(token) {
+      if (!token) return null;
+      const row = await d1
+        .prepare('SELECT token, user_id, expires_at FROM sessions WHERE token = ?')
+        .bind(String(token).trim())
+        .first();
+      if (!row) return null;
+      if (new Date(row.expires_at).getTime() < Date.now()) {
+        await d1.prepare('DELETE FROM sessions WHERE token = ?').bind(row.token).run();
+        return null;
+      }
+      return this.getUserById(Number(row.user_id));
+    },
+
+    async deleteSession(token) {
+      if (!token) return;
+      await d1.prepare('DELETE FROM sessions WHERE token = ?').bind(String(token).trim()).run();
+    },
+
+    // ===== PER-SHOP SETTINGS =====
+    async getSettings(shopId) {
+      const sid = Number(shopId);
+      const shop = await this.getShopById(sid);
+      await ensureShopSeeded(sid, shop?.name || 'ร้านค้าของฉัน');
+
+      const { results } = await d1
+        .prepare('SELECT key, value FROM shop_settings WHERE shop_id = ?')
+        .bind(sid)
+        .all();
       const map = {};
       for (const r of results || []) {
         map[r.key] = r.value;
       }
       return {
-        shopName: map.shop_name || 'ร้านค้าของฉัน',
+        shopId: sid,
+        webhookSlug: shop?.webhookSlug || '',
+        shopName: map.shop_name || shop?.name || 'ร้านค้าของฉัน',
         slipApiBaseUrl: (map.slip_api_base_url || defaultSlipApiUrl).replace(/\/+$/, ''),
-        lineChannelSecret: map.line_channel_secret || env.LINE_CHANNEL_SECRET || '',
-        lineChannelAccessToken: map.line_channel_access_token || env.LINE_CHANNEL_ACCESS_TOKEN || '',
-        lineAdminNotifyTargetId: map.line_admin_notify_target_id || env.LINE_ADMIN_NOTIFY_TARGET_ID || '',
+        lineChannelSecret: map.line_channel_secret || '',
+        lineChannelAccessToken: map.line_channel_access_token || '',
+        lineAdminNotifyTargetId: map.line_admin_notify_target_id || '',
         lineAutoReplyEnabled: map.line_auto_reply_enabled !== 'false',
         lineReplyOnError: map.line_reply_on_error !== 'false',
         lineIgnoreNonSlip: map.line_ignore_non_slip !== 'false',
         lineNotifyAdminOnVerified: map.line_notify_admin_on_verified === 'true',
         lineNotifyAdminOnAlert: map.line_notify_admin_on_alert !== 'false',
         lineReplyGreeting: map.line_reply_greeting || 'ได้รับยอดโอนเรียบร้อยแล้ว ขอบคุณที่อุดหนุนครับ',
-        fbAppSecret: map.fb_app_secret || env.FB_APP_SECRET || '',
-        fbPageAccessToken: map.fb_page_access_token || env.FB_PAGE_ACCESS_TOKEN || '',
-        fbVerifyToken: map.fb_verify_token || env.FB_VERIFY_TOKEN || '',
+        fbAppSecret: map.fb_app_secret || '',
+        fbPageAccessToken: map.fb_page_access_token || '',
+        fbVerifyToken: map.fb_verify_token || '',
         fbAutoReplyEnabled: map.fb_auto_reply_enabled !== 'false',
         fbReplyOnError: map.fb_reply_on_error !== 'false',
         fbIgnoreNonSlip: map.fb_ignore_non_slip !== 'false',
@@ -117,12 +274,12 @@ export function createD1Repository(d1, env = {}) {
         checkReceiverAccount: map.check_receiver_account !== 'false',
         rejectDuplicateSlip: map.reject_duplicate_slip !== 'false',
         minAmount: Number(map.min_amount || 0),
-        extensionApiKey: map.extension_api_key || env.EXTENSION_API_KEY || '',
+        extensionApiKey: map.extension_api_key || '',
       };
     },
 
-    async getPublicSettings() {
-      const s = await this.getSettings();
+    async getPublicSettings(shopId) {
+      const s = await this.getSettings(shopId);
       return {
         ...s,
         hasLineChannelSecret: Boolean(s.lineChannelSecret),
@@ -148,8 +305,9 @@ export function createD1Repository(d1, env = {}) {
       };
     },
 
-    async updateSettings(patch) {
-      await ensureSeeded();
+    async updateSettings(shopId, patch) {
+      const sid = Number(shopId);
+      await ensureShopSeeded(sid);
       const keyMap = {
         shopName: 'shop_name',
         slipApiBaseUrl: 'slip_api_base_url',
@@ -199,35 +357,43 @@ export function createD1Repository(d1, env = {}) {
         stmts.push(
           d1
             .prepare(
-              'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+              'INSERT INTO shop_settings (shop_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(shop_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
             )
-            .bind(dbKey, val, now)
+            .bind(sid, dbKey, val, now)
+        );
+      }
+      if (patch.shopName && String(patch.shopName).trim()) {
+        stmts.push(
+          d1.prepare('UPDATE shops SET name = ? WHERE id = ?').bind(String(patch.shopName).trim(), sid)
         );
       }
       if (stmts.length > 0) {
         await d1.batch(stmts);
       }
-      return this.getPublicSettings();
+      return this.getPublicSettings(sid);
     },
 
-    async regenerateExtensionApiKey() {
+    async regenerateExtensionApiKey(shopId) {
       const nextKey = `sf_${randomHex(18)}`;
-      await this.updateSettings({ extensionApiKey: nextKey });
+      await this.updateSettings(shopId, { extensionApiKey: nextKey });
       return nextKey;
     },
 
-    async regenerateFbVerifyToken() {
+    async regenerateFbVerifyToken(shopId) {
       const nextToken = `fbv_${randomHex(12)}`;
-      await this.updateSettings({ fbVerifyToken: nextToken });
+      await this.updateSettings(shopId, { fbVerifyToken: nextToken });
       return nextToken;
     },
 
-    async listSellerAccounts() {
+    // ===== SELLER ACCOUNTS (SCOPED BY SHOP_ID) =====
+    async listSellerAccounts(shopId) {
       const { results } = await d1
-        .prepare('SELECT * FROM seller_accounts ORDER BY is_active DESC, id DESC')
+        .prepare('SELECT * FROM seller_accounts WHERE shop_id = ? ORDER BY is_active DESC, id DESC')
+        .bind(Number(shopId))
         .all();
       return (results || []).map((r) => ({
         id: Number(r.id),
+        shopId: Number(r.shop_id),
         bankCode: r.bank_code,
         bankName: r.bank_name,
         accountNumber: r.account_number,
@@ -238,14 +404,15 @@ export function createD1Repository(d1, env = {}) {
       }));
     },
 
-    async createSellerAccount({ bankCode, bankName, accountNumber, accountName, accountType = 'BANK' }) {
+    async createSellerAccount(shopId, { bankCode, bankName, accountNumber, accountName, accountType = 'BANK' }) {
       const now = getBangkokIsoNow();
       const res = await d1
         .prepare(
-          `INSERT INTO seller_accounts (bank_code, bank_name, account_number, account_name, account_type, is_active, created_at)
-           VALUES (?, ?, ?, ?, ?, 1, ?)`
+          `INSERT INTO seller_accounts (shop_id, bank_code, bank_name, account_number, account_name, account_type, is_active, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?)`
         )
         .bind(
+          Number(shopId),
           String(bankCode || '004').trim(),
           String(bankName || '').trim(),
           String(accountNumber || '').trim(),
@@ -254,18 +421,21 @@ export function createD1Repository(d1, env = {}) {
           now
         )
         .run();
-      const accounts = await this.listSellerAccounts();
+      const accounts = await this.listSellerAccounts(shopId);
       return accounts.find((a) => a.id === Number(res.meta?.last_row_id));
     },
 
-    async updateSellerAccount(id, patch) {
-      const existing = await d1.prepare('SELECT * FROM seller_accounts WHERE id = ?').bind(Number(id)).first();
+    async updateSellerAccount(shopId, id, patch) {
+      const existing = await d1
+        .prepare('SELECT * FROM seller_accounts WHERE id = ? AND shop_id = ?')
+        .bind(Number(id), Number(shopId))
+        .first();
       if (!existing) return null;
       await d1
         .prepare(
           `UPDATE seller_accounts
            SET bank_code = ?, bank_name = ?, account_number = ?, account_name = ?, account_type = ?, is_active = ?
-           WHERE id = ?`
+           WHERE id = ? AND shop_id = ?`
         )
         .bind(
           patch.bankCode !== undefined ? String(patch.bankCode).trim() : existing.bank_code,
@@ -278,21 +448,28 @@ export function createD1Repository(d1, env = {}) {
               : 'BANK'
             : existing.account_type,
           patch.isActive !== undefined ? (patch.isActive ? 1 : 0) : existing.is_active,
-          Number(id)
+          Number(id),
+          Number(shopId)
         )
         .run();
-      const accounts = await this.listSellerAccounts();
+      const accounts = await this.listSellerAccounts(shopId);
       return accounts.find((a) => a.id === Number(id));
     },
 
-    async deleteSellerAccount(id) {
-      const res = await d1.prepare('DELETE FROM seller_accounts WHERE id = ?').bind(Number(id)).run();
+    async deleteSellerAccount(shopId, id) {
+      const res = await d1
+        .prepare('DELETE FROM seller_accounts WHERE id = ? AND shop_id = ?')
+        .bind(Number(id), Number(shopId))
+        .run();
       return Number(res.meta?.changes || 0) > 0;
     },
 
-    async listCategories() {
+    // ===== CATEGORIES (SCOPED BY SHOP_ID) =====
+    async listCategories(shopId) {
+      await ensureShopSeeded(shopId);
       const { results } = await d1
-        .prepare('SELECT * FROM categories ORDER BY is_default DESC, id ASC')
+        .prepare('SELECT * FROM categories WHERE shop_id = ? ORDER BY is_default DESC, id ASC')
+        .bind(Number(shopId))
         .all();
       return (results || []).map((c) => ({
         id: Number(c.id),
@@ -302,46 +479,50 @@ export function createD1Repository(d1, env = {}) {
       }));
     },
 
-    async createCategory({ name, color = '#0D6B4E' }) {
+    async createCategory(shopId, { name, color = '#0D6B4E' }) {
       const cleanName = String(name || '').trim();
       const res = await d1
-        .prepare('INSERT INTO categories (name, color, is_default) VALUES (?, ?, 0)')
-        .bind(cleanName, String(color || '#0D6B4E').trim())
+        .prepare('INSERT INTO categories (shop_id, name, color, is_default) VALUES (?, ?, ?, 0)')
+        .bind(Number(shopId), cleanName, String(color || '#0D6B4E').trim())
         .run();
       return { id: Number(res.meta?.last_row_id), name: cleanName, color, isDefault: false };
     },
 
-    async deleteCategory(id) {
+    async deleteCategory(shopId, id) {
       const res = await d1
-        .prepare('DELETE FROM categories WHERE id = ? AND is_default = 0')
-        .bind(Number(id))
+        .prepare('DELETE FROM categories WHERE id = ? AND shop_id = ? AND is_default = 0')
+        .bind(Number(id), Number(shopId))
         .run();
       return Number(res.meta?.changes || 0) > 0;
     },
 
-    async findVerifiedByTransRef(transRef) {
+    // ===== TRANSACTIONS (SCOPED BY SHOP_ID) =====
+    async findVerifiedByTransRef(shopId, transRef) {
       if (!transRef) return null;
       const row = await d1
-        .prepare(`SELECT * FROM transactions WHERE trans_ref = ? AND status = 'VERIFIED' ORDER BY id ASC LIMIT 1`)
-        .bind(String(transRef).trim())
+        .prepare(
+          `SELECT * FROM transactions WHERE shop_id = ? AND trans_ref = ? AND status = 'VERIFIED' ORDER BY id ASC LIMIT 1`
+        )
+        .bind(Number(shopId), String(transRef).trim())
         .first();
       return mapTransaction(row);
     },
 
-    async createTransaction(tx) {
+    async createTransaction(shopId, tx) {
+      const sid = Number(shopId);
       const now = tx.recordedAt || getBangkokIsoNow();
       const dateKey = tx.recordedDate || getBangkokDateKey(now);
       const res = await d1
         .prepare(
           `INSERT INTO transactions (
-            trans_ref, status, channel, amount, sending_bank_code, sending_bank_name,
+            shop_id, trans_ref, status, channel, amount, sending_bank_code, sending_bank_name,
             sender_account, receiver_account, matched_seller_account_id, matched_seller_account_label,
             transfer_display, transfer_iso, recorded_at, recorded_date,
             customer_name, customer_line_id, line_source_type, line_source_id, line_message_id,
             category, order_note, verification_message, error_code, crc_hex, processing_ms,
             raw_qr_payload, tlv_breakdown_json, ocr_lines_json, checks_json, raw_api_response_json
           ) VALUES (
-            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
@@ -350,6 +531,7 @@ export function createD1Repository(d1, env = {}) {
           )`
         )
         .bind(
+          sid,
           tx.transRef || '',
           tx.status || 'VERIFIED',
           tx.channel || 'DASHBOARD',
@@ -382,22 +564,28 @@ export function createD1Repository(d1, env = {}) {
           JSON.stringify(tx.rawApiResponse || {})
         )
         .run();
-      return this.getTransactionById(Number(res.meta?.last_row_id));
+      return this.getTransactionById(sid, Number(res.meta?.last_row_id));
     },
 
-    async getTransactionById(id) {
-      const row = await d1.prepare('SELECT * FROM transactions WHERE id = ?').bind(Number(id)).first();
+    async getTransactionById(shopId, id) {
+      const row = await d1
+        .prepare('SELECT * FROM transactions WHERE id = ? AND shop_id = ?')
+        .bind(Number(id), Number(shopId))
+        .first();
       return mapTransaction(row);
     },
 
-    async updateTransaction(id, patch) {
-      const existing = await d1.prepare('SELECT * FROM transactions WHERE id = ?').bind(Number(id)).first();
+    async updateTransaction(shopId, id, patch) {
+      const existing = await d1
+        .prepare('SELECT * FROM transactions WHERE id = ? AND shop_id = ?')
+        .bind(Number(id), Number(shopId))
+        .first();
       if (!existing) return null;
       await d1
         .prepare(
           `UPDATE transactions
            SET status = ?, amount = ?, category = ?, order_note = ?, customer_name = ?, verification_message = ?
-           WHERE id = ?`
+           WHERE id = ? AND shop_id = ?`
         )
         .bind(
           patch.status !== undefined ? String(patch.status) : existing.status,
@@ -406,20 +594,27 @@ export function createD1Repository(d1, env = {}) {
           patch.orderNote !== undefined ? String(patch.orderNote) : existing.order_note,
           patch.customerName !== undefined ? String(patch.customerName) : existing.customer_name,
           patch.verificationMessage !== undefined ? String(patch.verificationMessage) : existing.verification_message,
-          Number(id)
+          Number(id),
+          Number(shopId)
         )
         .run();
-      return this.getTransactionById(Number(id));
+      return this.getTransactionById(shopId, Number(id));
     },
 
-    async deleteTransaction(id) {
-      const res = await d1.prepare('DELETE FROM transactions WHERE id = ?').bind(Number(id)).run();
+    async deleteTransaction(shopId, id) {
+      const res = await d1
+        .prepare('DELETE FROM transactions WHERE id = ? AND shop_id = ?')
+        .bind(Number(id), Number(shopId))
+        .run();
       return Number(res.meta?.changes || 0) > 0;
     },
 
-    async listTransactions({ status, channel, category, search, dateFrom, dateTo, limit = 100, offset = 0 } = {}) {
-      const where = [];
-      const params = [];
+    async listTransactions(
+      shopId,
+      { status, channel, category, search, dateFrom, dateTo, limit = 100, offset = 0 } = {}
+    ) {
+      const where = ['shop_id = ?'];
+      const params = [Number(shopId)];
 
       if (status && status !== 'ALL') {
         if (status === 'ALERT') {
@@ -453,7 +648,7 @@ export function createD1Repository(d1, env = {}) {
         params.push(like, like, like, like, like, like);
       }
 
-      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const whereSql = `WHERE ${where.join(' AND ')}`;
       const totalRow = await d1
         .prepare(`SELECT COUNT(*) AS count FROM transactions ${whereSql}`)
         .bind(...params)
@@ -469,7 +664,8 @@ export function createD1Repository(d1, env = {}) {
       };
     },
 
-    async getDashboardSummary(days = 7) {
+    async getDashboardSummary(shopId, days = 7) {
+      const sid = Number(shopId);
       const todayKey = getBangkokDateKey(new Date());
       const monthPrefix = todayKey.slice(0, 7);
 
@@ -488,9 +684,9 @@ export function createD1Repository(d1, env = {}) {
                COUNT(CASE WHEN status = 'VERIFIED' THEN 1 END) AS verified_count,
                COUNT(CASE WHEN status IN ('DUPLICATE', 'WRONG_ACCOUNT', 'NEEDS_REVIEW', 'INVALID') THEN 1 END) AS alert_count,
                COUNT(*) AS total_count
-             FROM transactions WHERE recorded_date = ?`
+             FROM transactions WHERE shop_id = ? AND recorded_date = ?`
           )
-          .bind(todayKey)
+          .bind(sid, todayKey)
           .first(),
         d1
           .prepare(
@@ -498,9 +694,9 @@ export function createD1Repository(d1, env = {}) {
                COALESCE(SUM(CASE WHEN status = 'VERIFIED' THEN amount ELSE 0 END), 0) AS revenue,
                COUNT(CASE WHEN status = 'VERIFIED' THEN 1 END) AS verified_count,
                COUNT(CASE WHEN status IN ('DUPLICATE', 'WRONG_ACCOUNT', 'NEEDS_REVIEW', 'INVALID') THEN 1 END) AS alert_count
-             FROM transactions WHERE recorded_date LIKE ?`
+             FROM transactions WHERE shop_id = ? AND recorded_date LIKE ?`
           )
-          .bind(`${monthPrefix}%`)
+          .bind(sid, `${monthPrefix}%`)
           .first(),
         d1
           .prepare(
@@ -511,8 +707,9 @@ export function createD1Repository(d1, env = {}) {
                COUNT(CASE WHEN status = 'WRONG_ACCOUNT' THEN 1 END) AS wrong_account_count,
                COUNT(CASE WHEN status = 'NEEDS_REVIEW' THEN 1 END) AS review_count,
                COUNT(*) AS total_count
-             FROM transactions`
+             FROM transactions WHERE shop_id = ?`
           )
+          .bind(sid)
           .first(),
         d1
           .prepare(
@@ -522,10 +719,10 @@ export function createD1Repository(d1, env = {}) {
                COUNT(CASE WHEN status = 'VERIFIED' THEN 1 END) AS verified_count,
                COUNT(CASE WHEN status IN ('DUPLICATE', 'WRONG_ACCOUNT', 'NEEDS_REVIEW', 'INVALID') THEN 1 END) AS alert_count
              FROM transactions
-             WHERE recorded_date >= ?
+             WHERE shop_id = ? AND recorded_date >= ?
              GROUP BY recorded_date`
           )
-          .bind(startDate)
+          .bind(sid, startDate)
           .all(),
         d1
           .prepare(
@@ -534,11 +731,12 @@ export function createD1Repository(d1, env = {}) {
                COALESCE(SUM(amount), 0) AS revenue,
                COUNT(*) AS count
              FROM transactions
-             WHERE status = 'VERIFIED'
+             WHERE shop_id = ? AND status = 'VERIFIED'
              GROUP BY label
              ORDER BY revenue DESC
              LIMIT 6`
           )
+          .bind(sid)
           .all(),
         d1
           .prepare(
@@ -548,9 +746,11 @@ export function createD1Repository(d1, env = {}) {
                COUNT(CASE WHEN status = 'VERIFIED' THEN 1 END) AS verified_count,
                COUNT(*) AS total_count
              FROM transactions
+             WHERE shop_id = ?
              GROUP BY channel
              ORDER BY total_count DESC`
           )
+          .bind(sid)
           .all(),
         d1
           .prepare(
@@ -559,10 +759,11 @@ export function createD1Repository(d1, env = {}) {
                COALESCE(SUM(amount), 0) AS revenue,
                COUNT(*) AS count
              FROM transactions
-             WHERE status = 'VERIFIED'
+             WHERE shop_id = ? AND status = 'VERIFIED'
              GROUP BY category
              ORDER BY revenue DESC`
           )
+          .bind(sid)
           .all(),
       ]);
 
@@ -619,24 +820,29 @@ export function createD1Repository(d1, env = {}) {
       };
     },
 
-    async logWebhookEvent({
-      eventType,
-      sourceType = '',
-      sourceId = '',
-      userId = '',
-      customerName = '',
-      messageId = '',
-      outcome,
-      detail = '',
-      transactionId = null,
-    }) {
+    // ===== WEBHOOK LOGS (SCOPED BY SHOP_ID) =====
+    async logWebhookEvent(
+      shopId,
+      {
+        eventType,
+        sourceType = '',
+        sourceId = '',
+        userId = '',
+        customerName = '',
+        messageId = '',
+        outcome,
+        detail = '',
+        transactionId = null,
+      }
+    ) {
       const now = getBangkokIsoNow();
       const res = await d1
         .prepare(
-          `INSERT INTO webhook_logs (event_type, source_type, source_id, user_id, customer_name, message_id, outcome, detail, transaction_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO webhook_logs (shop_id, event_type, source_type, source_id, user_id, customer_name, message_id, outcome, detail, transaction_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
+          Number(shopId),
           eventType,
           sourceType,
           sourceId,
@@ -652,10 +858,10 @@ export function createD1Repository(d1, env = {}) {
       return Number(res.meta?.last_row_id || 0);
     },
 
-    async listWebhookLogs(limit = 30) {
+    async listWebhookLogs(shopId, limit = 30) {
       const { results } = await d1
-        .prepare('SELECT * FROM webhook_logs ORDER BY id DESC LIMIT ?')
-        .bind(Number(limit))
+        .prepare('SELECT * FROM webhook_logs WHERE shop_id = ? ORDER BY id DESC LIMIT ?')
+        .bind(Number(shopId), Number(limit))
         .all();
       return (results || []).map((r) => ({
         id: Number(r.id),

@@ -52,6 +52,36 @@ export function bytesToHex(bytes) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+export async function hashPassword(password, saltHex = randomHex(16)) {
+  const baseKey = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(String(password)),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: enc.encode(saltHex),
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    baseKey,
+    256
+  );
+  return {
+    hash: bytesToHex(new Uint8Array(bits)),
+    salt: saltHex,
+  };
+}
+
+export async function verifyPassword(password, expectedHash, saltHex) {
+  if (!password || !expectedHash || !saltHex) return false;
+  const { hash } = await hashPassword(password, saltHex);
+  return timingSafeEqualStrings(hash, expectedHash);
+}
+
 export async function verifyLineSignatureWeb(rawArrayBuffer, signatureHeader, channelSecret) {
   if (!channelSecret || !signatureHeader || !rawArrayBuffer) return false;
   const sigBytes = await hmacSha256Raw(channelSecret, rawArrayBuffer);

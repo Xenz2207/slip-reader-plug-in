@@ -6,7 +6,13 @@
 
 ## ความสามารถหลัก
 
-1. **Seller Revenue Dashboard (React + Node.js + SQLite)**
+1. **ระบบสมาชิกและแยกข้อมูลหลายร้านค้า (Multi-Shop & Strict Tenant Isolation)**
+   - **สมัครเปิดร้านใหม่ / เข้าสู่ระบบ** ด้วยรหัสผ่านเข้ารหัส PBKDF2-SHA256 (`100,000` รอบ)
+   - แยกข้อมูลแต่ละร้านค้า 100% (`shop_id`): สมุดรายรับ, บัญชีธนาคารรับเงิน (Whitelist), หมวดหมู่, ประวัติ Webhook และ API Keys ไม่ปะปนกัน
+   - **1 บัญชีผู้ใช้สร้างและสลับดูได้หลายร้านค้า** จากเมนูซ้ายมือ (`+ เพิ่มร้าน`)
+   - **Webhook URL แยกเฉพาะแต่ละร้าน** (`/api/line/webhook/<shopSlug>` และ `/api/messenger/webhook/<shopSlug>`)
+
+2. **Seller Revenue Dashboard (React + Cloudflare Workers + D1 SQLite)**
    - สรุปรายรับยืนยันแล้วรายวัน / รายเดือน / กราฟ 7, 14, 30 วัน แยกตามธนาคารและช่องทาง (`LINE`, `Facebook Messenger`, `Web`, `Manual`)
    - อัปเดตสดแบบ **Real-time (SSE)** และรองรับการใช้งานบนมือถือ
    - **ตรวจสลิปด่วนบนเว็บ** พร้อมสแกน Mini QR บนเบราว์เซอร์ (`jsQR`)

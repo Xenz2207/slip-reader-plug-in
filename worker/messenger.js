@@ -51,7 +51,14 @@ export function buildMessengerReplyWorker(tx, settings = {}) {
   ].join('\n');
 }
 
-async function downloadAttachmentBlob(url) {
+async function downloadAttachmentBlob(url, mockClient) {
+  if (mockClient?.downloadAttachmentImage) {
+    const r = await mockClient.downloadAttachmentImage(url);
+    return {
+      blob: new Blob([r.buffer], { type: r.mimeType || 'image/jpeg' }),
+      filename: r.filename || 'fb_slip.jpg',
+    };
+  }
   const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
   if (!res.ok) throw new Error(`ดาวน์โหลดรูปจาก Facebook Messenger ไม่สำเร็จ (HTTP ${res.status})`);
   const mimeType = res.headers.get('content-type') || 'image/jpeg';
@@ -60,7 +67,10 @@ async function downloadAttachmentBlob(url) {
   return { blob, filename: `fb_slip_${Date.now()}.${ext}` };
 }
 
-async function fetchFbProfileName(psid, pageAccessToken) {
+async function fetchFbProfileName(psid, pageAccessToken, mockClient) {
+  if (mockClient?.fetchUserProfile) {
+    return mockClient.fetchUserProfile(psid, pageAccessToken);
+  }
   if (!psid || !pageAccessToken) return '';
   try {
     const endpoint = `https://graph.facebook.com/v21.0/${encodeURIComponent(psid)}?fields=first_name,last_name,name&access_token=${encodeURIComponent(pageAccessToken)}`;
@@ -74,7 +84,10 @@ async function fetchFbProfileName(psid, pageAccessToken) {
   }
 }
 
-async function sendFbTextMessage(psid, text, pageAccessToken) {
+async function sendFbTextMessage(psid, text, pageAccessToken, mockClient) {
+  if (mockClient?.sendTextMessage) {
+    return mockClient.sendTextMessage(psid, text, pageAccessToken);
+  }
   const endpoint = `https://graph.facebook.com/v21.0/me/messages?access_token=${encodeURIComponent(pageAccessToken)}`;
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -91,7 +104,16 @@ async function sendFbTextMessage(psid, text, pageAccessToken) {
   }
 }
 
-export async function processMessengerEventWorker({ pageId, event, repo, timeoutMs }) {
+export async function processMessengerEventWorker({
+  shopId,
+  pageId,
+  event,
+  repo,
+  timeoutMs,
+  mockSlipVerify,
+  mockMessengerClient,
+  mockLineClient,
+}) {
   const message = event?.message;
   if (!message || message.is_echo) return;
 
@@ -99,16 +121,18 @@ export async function processMessengerEventWorker({ pageId, event, repo, timeout
   const imageAttachments = attachments.filter((att) => att?.type === 'image' && att?.payload?.url);
   if (imageAttachments.length === 0) return;
 
-  const settings = await repo.getSettings();
+  const settings = await repo.getSettings(shopId);
   const senderPsid = event?.sender?.id || '';
   const messageId = message.mid || '';
   const customerName =
-    (await fetchFbProfileName(senderPsid, settings.fbPageAccessToken)) || 'ลูกค้า Facebook';
+    (await fetchFbProfileName(senderPsid, settings.fbPageAccessToken, mockMessengerClient)) ||
+    'ลูกค้า Facebook';
 
   for (const att of imageAttachments) {
-    const img = await downloadAttachmentBlob(att.payload.url);
+    const img = await downloadAttachmentBlob(att.payload.url, mockMessengerClient);
     const result = await verifyAndRecordSlipWorker({
       repo,
+      shopId,
       blob: img.blob,
       filename: img.filename,
       channel: 'FB_MESSENGER',
@@ -119,10 +143,11 @@ export async function processMessengerEventWorker({ pageId, event, repo, timeout
       lineMessageId: messageId,
       skipSaveIfNonSlip: settings.fbIgnoreNonSlip,
       timeoutMs,
+      mockSlipVerify,
     });
 
     if (!result.ok) {
-      await repo.logWebhookEvent({
+      await repo.logWebhookEvent(shopId, {
         eventType: 'fb:image',
         sourceType: 'facebook',
         sourceId: pageId,
@@ -136,7 +161,7 @@ export async function processMessengerEventWorker({ pageId, event, repo, timeout
     }
 
     if (result.isNonSlip && !result.transaction) {
-      await repo.logWebhookEvent({
+      await repo.logWebhookEvent(shopId, {
         eventType: 'fb:image',
         sourceType: 'facebook',
         sourceId: pageId,
@@ -164,7 +189,7 @@ export async function processMessengerEventWorker({ pageId, event, repo, timeout
 
     if (shouldReply) {
       try {
-        await sendFbTextMessage(senderPsid, replyText, settings.fbPageAccessToken);
+        await sendFbTextMessage(senderPsid, replyText, settings.fbPageAccessToken, mockMessengerClient);
         replyDetail = 'ส่งข้อความยืนยันกลับใน Messenger สำเร็จ';
       } catch (err) {
         replyDetail = `บันทึกสำเร็จแต่ตอบกลับ Messenger ไม่สำเร็จ: ${err.message}`;
@@ -181,14 +206,19 @@ export async function processMessengerEventWorker({ pageId, event, repo, timeout
           { ...tx, customerName: `${tx.customerName} (Facebook)` },
           settings
         );
-        await sendLinePush(settings.lineAdminNotifyTargetId, [flexMsg], settings.lineChannelAccessToken);
+        await sendLinePush(
+          settings.lineAdminNotifyTargetId,
+          [flexMsg],
+          settings.lineChannelAccessToken,
+          mockLineClient
+        );
         replyDetail += ' · แจ้งเตือนเข้ากลุ่ม LINE แอดมินแล้ว';
       } catch (err) {
         replyDetail += ` · แจ้ง LINE แอดมินไม่สำเร็จ (${err.message})`;
       }
     }
 
-    await repo.logWebhookEvent({
+    await repo.logWebhookEvent(shopId, {
       eventType: 'fb:image',
       sourceType: 'facebook',
       sourceId: pageId,

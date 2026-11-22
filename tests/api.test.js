@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { createDatabase } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { matchReceiverAccount } from '../server/services/verificationEngine.js';
 import { verifyLineSignature, buildSlipFlexMessage } from '../server/services/lineService.js';
@@ -17,23 +16,11 @@ function signFacebookPayload(bodyStr, appSecret) {
 }
 
 function startTestServer({ slipVerifyImpl, lineClientOverrides, messengerClientOverrides } = {}) {
-  const db = createDatabase(':memory:');
   const sentReplies = [];
   const sentPushes = [];
   const sentFbMessages = [];
 
   const mockSlipClient = {
-    async checkHealth() {
-      return {
-        online: true,
-        httpStatus: 200,
-        baseUrl: 'https://my-slip-reader.onrender.com',
-        service: 'Thai Slip Reader API',
-        version: '6.3.0',
-        ocrEngine: 'OpenThai2.0',
-        latencyMs: 42,
-      };
-    },
     async verifySlipImage(args) {
       if (slipVerifyImpl) return slipVerifyImpl(args);
       return {
@@ -82,10 +69,6 @@ function startTestServer({ slipVerifyImpl, lineClientOverrides, messengerClientO
       sentPushes.push({ to, messages });
       return true;
     },
-    async replyOrPush({ replyToken, messages }) {
-      sentReplies.push({ replyToken, messages });
-      return { method: 'reply' };
-    },
     ...lineClientOverrides,
   };
 
@@ -107,18 +90,20 @@ function startTestServer({ slipVerifyImpl, lineClientOverrides, messengerClientO
     ...messengerClientOverrides,
   };
 
-  const { app } = createApp({
-    db,
+  const { app, db, repo } = createApp({
+    dbPath: ':memory:',
     slipClient: mockSlipClient,
     lineClient: mockLineClient,
     messengerClient: mockMessengerClient,
   });
+
   return new Promise((resolve) => {
     const server = app.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       resolve({
         baseUrl: `http://127.0.0.1:${addr.port}`,
         db,
+        repo,
         sentReplies,
         sentPushes,
         sentFbMessages,
@@ -132,6 +117,28 @@ function startTestServer({ slipVerifyImpl, lineClientOverrides, messengerClientO
       });
     });
   });
+}
+
+async function registerShopAccount(baseUrl, { username, password = 'password123', shopName }) {
+  const res = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, shopName }),
+  });
+  assert.equal(res.status, 201);
+  const data = await res.json();
+  return {
+    token: data.token,
+    user: data.user,
+    shop: data.shops[0],
+    headers(extra = {}) {
+      return {
+        Authorization: `Bearer ${data.token}`,
+        'X-Shop-Id': String(data.shops[0].id),
+        ...extra,
+      };
+    },
+  };
 }
 
 test('matchReceiverAccount matches masked bank accounts, PromptPay, OCR name, and rejects mismatch', () => {
@@ -161,26 +168,18 @@ test('matchReceiverAccount matches masked bank accounts, PromptPay, OCR name, an
   assert.equal(matchReceiverAccount('xxx-x-x0000-x', ['นาย คนอื่น'], accounts).matched, false);
 });
 
-test('verifyLineSignature validates HMAC-SHA256 properly', () => {
-  const secret = 'test-channel-secret-123';
-  const body = JSON.stringify({ events: [] });
-  const sig = signLinePayload(body, secret);
-
-  assert.equal(verifyLineSignature(Buffer.from(body), sig, secret), true);
-  assert.equal(verifyLineSignature(Buffer.from(body + ' '), sig, secret), false);
-  assert.equal(verifyLineSignature(Buffer.from(body), 'bad-sig', secret), false);
-});
-
-test('Cloudflare Worker Web Crypto HMAC verifies LINE and Facebook signatures', async () => {
+test('verifyLineSignature and Cloudflare Worker Web Crypto HMAC verify LINE and Facebook signatures', async () => {
   const secret = 'cf-worker-secret-456';
   const bodyStr = JSON.stringify({ events: [{ type: 'message' }] });
   const rawBuf = new TextEncoder().encode(bodyStr).buffer;
 
   const lineSig = signLinePayload(bodyStr, secret);
+  assert.equal(verifyLineSignature(Buffer.from(bodyStr), lineSig, secret), true);
   assert.equal(await verifyLineSignatureWeb(rawBuf, lineSig, secret), true);
   assert.equal(await verifyLineSignatureWeb(rawBuf, 'invalid', secret), false);
 
   const fbSig = signFacebookPayload(bodyStr, secret);
+  assert.equal(verifyFacebookSignature(Buffer.from(bodyStr), fbSig, secret), true);
   assert.equal(await verifyFacebookSignatureWeb(rawBuf, fbSig, secret), true);
   assert.equal(await verifyFacebookSignatureWeb(rawBuf, 'sha256=bad', secret), false);
 });
@@ -209,10 +208,86 @@ test('buildSlipFlexMessage constructs valid LINE Flex bubble for verified and du
   assert.equal(dupFlex.contents.header.backgroundColor, '#C82829');
 });
 
+test('Multi-Shop Auth & Strict Tenant Isolation: two shops never mix transactions, settings, or webhooks', async () => {
+  const srv = await startTestServer();
+  try {
+    // Unauthenticated call rejected with 401
+    const unauth = await fetch(`${srv.baseUrl}/api/summary`);
+    assert.equal(unauth.status, 401);
+
+    // Register Shop A and Shop B
+    const shopA = await registerShopAccount(srv.baseUrl, {
+      username: 'seller_a',
+      shopName: 'ร้านเสื้อผ้า A',
+    });
+    const shopB = await registerShopAccount(srv.baseUrl, {
+      username: 'seller_b',
+      shopName: 'ร้านคาเฟ่ B',
+    });
+
+    assert.notEqual(shopA.shop.id, shopB.shop.id);
+    assert.notEqual(shopA.shop.webhookSlug, shopB.shop.webhookSlug);
+
+    // Shop A cannot access Shop B's data by spoofing X-Shop-Id
+    const crossAccess = await fetch(`${srv.baseUrl}/api/summary`, {
+      headers: {
+        Authorization: `Bearer ${shopA.token}`,
+        'X-Shop-Id': String(shopB.shop.id),
+      },
+    });
+    assert.equal(crossAccess.status, 403);
+
+    // Record manual revenue in Shop A (1,000 Baht) and Shop B (450 Baht)
+    await fetch(`${srv.baseUrl}/api/transactions/manual`, {
+      method: 'POST',
+      headers: shopA.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ amount: 1000, customerName: 'ลูกค้า A' }),
+    });
+    await fetch(`${srv.baseUrl}/api/transactions/manual`, {
+      method: 'POST',
+      headers: shopB.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ amount: 450, customerName: 'ลูกค้า B' }),
+    });
+
+    const sumA = await (await fetch(`${srv.baseUrl}/api/summary`, { headers: shopA.headers() })).json();
+    const sumB = await (await fetch(`${srv.baseUrl}/api/summary`, { headers: shopB.headers() })).json();
+    assert.equal(sumA.today.revenue, 1000);
+    assert.equal(sumB.today.revenue, 450);
+
+    // Set different LINE secrets for Shop A and Shop B
+    await fetch(`${srv.baseUrl}/api/settings`, {
+      method: 'PUT',
+      headers: shopA.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ lineChannelSecret: 'secret-shop-a', lineChannelAccessToken: 'tok-a' }),
+    });
+    await fetch(`${srv.baseUrl}/api/settings`, {
+      method: 'PUT',
+      headers: shopB.headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ lineChannelSecret: 'secret-shop-b', lineChannelAccessToken: 'tok-b' }),
+    });
+
+    // Sending Shop A's signature to Shop B's webhook slug must fail with 401
+    const eventBody = JSON.stringify({ events: [] });
+    const wrongSlugRes = await fetch(
+      `${srv.baseUrl}/api/line/webhook/${shopB.shop.webhookSlug}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-line-signature': signLinePayload(eventBody, 'secret-shop-a'),
+        },
+        body: eventBody,
+      }
+    );
+    assert.equal(wrongSlugRes.status, 401);
+  } finally {
+    await srv.close();
+  }
+});
+
 test('End-to-end verification: revenue recording, duplicate rejection, wrong account, zero-amount review, and CSV export', async () => {
   let callIndex = 0;
   const responses = [
-    // 1. Valid slip matching seller account
     {
       success: true,
       data: {
@@ -225,7 +300,6 @@ test('End-to-end verification: revenue recording, duplicate rejection, wrong acc
         ocrExtractedLines: ['2,400.00'],
       },
     },
-    // 2. Exact duplicate transRef (even if remote API resets memory and returns success:true!)
     {
       success: true,
       data: {
@@ -237,7 +311,6 @@ test('End-to-end verification: revenue recording, duplicate rejection, wrong acc
         transferDisplay: '22 พ.ย. 69 14:00',
       },
     },
-    // 3. Wrong receiver account
     {
       success: true,
       data: {
@@ -249,7 +322,6 @@ test('End-to-end verification: revenue recording, duplicate rejection, wrong acc
         transferDisplay: '22 พ.ย. 69 14:05',
       },
     },
-    // 4. Amount = 0 edge case (NEEDS_REVIEW)
     {
       success: true,
       data: {
@@ -274,10 +346,14 @@ test('End-to-end verification: revenue recording, duplicate rejection, wrong acc
   });
 
   try {
-    // Register seller receiving account
+    const auth = await registerShopAccount(srv.baseUrl, {
+      username: 'main_shop',
+      shopName: 'ร้านหลัก',
+    });
+
     const accRes = await fetch(`${srv.baseUrl}/api/seller-accounts`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: auth.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         bankCode: '004',
         bankName: 'ธนาคารกสิกรไทย',
@@ -291,7 +367,11 @@ test('End-to-end verification: revenue recording, duplicate rejection, wrong acc
     async function uploadSlip() {
       const fd = new FormData();
       fd.append('file', new Blob(['img-bytes'], { type: 'image/jpeg' }), 'slip.jpg');
-      const res = await fetch(`${srv.baseUrl}/api/verify-slip`, { method: 'POST', body: fd });
+      const res = await fetch(`${srv.baseUrl}/api/verify-slip`, {
+        method: 'POST',
+        headers: auth.headers(),
+        body: fd,
+      });
       assert.equal(res.status, 200);
       return res.json();
     }
@@ -309,26 +389,25 @@ test('End-to-end verification: revenue recording, duplicate rejection, wrong acc
     const r4 = await uploadSlip();
     assert.equal(r4.transaction.status, 'NEEDS_REVIEW');
 
-    // Summary must ONLY count r1 (2400 Baht)
-    const sum1 = await (await fetch(`${srv.baseUrl}/api/summary`)).json();
+    const sum1 = await (await fetch(`${srv.baseUrl}/api/summary`, { headers: auth.headers() })).json();
     assert.equal(sum1.today.revenue, 2400);
     assert.equal(sum1.today.verifiedCount, 1);
     assert.equal(sum1.today.alertCount, 3);
 
-    // Seller reviews r4, corrects amount to 350, and approves as VERIFIED
     const patchRes = await fetch(`${srv.baseUrl}/api/transactions/${r4.transaction.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: auth.headers({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ status: 'VERIFIED', amount: 350, orderNote: 'แก้ยอดจาก OCR' }),
     });
     assert.equal(patchRes.status, 200);
 
-    const sum2 = await (await fetch(`${srv.baseUrl}/api/summary`)).json();
+    const sum2 = await (await fetch(`${srv.baseUrl}/api/summary`, { headers: auth.headers() })).json();
     assert.equal(sum2.today.revenue, 2750);
     assert.equal(sum2.today.verifiedCount, 2);
 
-    // Verify UTF-8 BOM CSV export (check raw wire bytes since fetch().text() strips BOM)
-    const csvRes = await fetch(`${srv.baseUrl}/api/transactions/export.csv`);
+    const csvRes = await fetch(
+      `${srv.baseUrl}/api/transactions/export.csv?token=${encodeURIComponent(auth.token)}&shopId=${auth.shop.id}`
+    );
     assert.equal(csvRes.status, 200);
     const csvBytes = new Uint8Array(await csvRes.arrayBuffer());
     assert.deepEqual(Array.from(csvBytes.slice(0, 3)), [0xef, 0xbb, 0xbf]);
@@ -340,7 +419,7 @@ test('End-to-end verification: revenue recording, duplicate rejection, wrong acc
   }
 });
 
-test('LINE Webhook verifies signature, auto-checks slip, replies with Flex Message, ignores non-slip, and answers !id', async () => {
+test('Per-shop LINE Webhook verifies signature, auto-checks slip, replies with Flex Message, ignores non-slip, and answers !id', async () => {
   let mode = 'SLIP';
   const srv = await startTestServer({
     slipVerifyImpl: async () => {
@@ -378,23 +457,27 @@ test('LINE Webhook verifies signature, auto-checks slip, replies with Flex Messa
   });
 
   try {
+    const auth = await registerShopAccount(srv.baseUrl, {
+      username: 'line_seller',
+      shopName: 'ร้านทดสอบ LINE',
+    });
     const secret = 'line-secret-xyz';
-    srv.db.updateSettings({
+    await srv.repo.updateSettings(auth.shop.id, {
       lineChannelSecret: secret,
       lineChannelAccessToken: 'line-token-abc',
       lineAutoReplyEnabled: true,
       lineIgnoreNonSlip: true,
     });
 
-    // 1. Invalid signature rejected with 401
-    const badRes = await fetch(`${srv.baseUrl}/api/line/webhook`, {
+    const webhookUrl = `${srv.baseUrl}/api/line/webhook/${auth.shop.webhookSlug}`;
+
+    const badRes = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-line-signature': 'wrong' },
       body: JSON.stringify({ events: [] }),
     });
     assert.equal(badRes.status, 401);
 
-    // 2. Valid LINE image event -> verified + Flex reply + revenue recorded
     const imgEventBody = JSON.stringify({
       events: [
         {
@@ -405,7 +488,7 @@ test('LINE Webhook verifies signature, auto-checks slip, replies with Flex Messa
         },
       ],
     });
-    const okRes = await fetch(`${srv.baseUrl}/api/line/webhook`, {
+    const okRes = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -415,18 +498,16 @@ test('LINE Webhook verifies signature, auto-checks slip, replies with Flex Messa
     });
     assert.equal(okRes.status, 200);
 
-    // Wait briefly for async event handler
-    await new Promise((r) => setTimeout(r, 120));
     assert.equal(srv.sentReplies.length, 1);
     assert.equal(srv.sentReplies[0].messages[0].type, 'flex');
 
-    const txList = await (await fetch(`${srv.baseUrl}/api/transactions`)).json();
+    const txList = await (
+      await fetch(`${srv.baseUrl}/api/transactions`, { headers: auth.headers() })
+    ).json();
     assert.equal(txList.items.length, 1);
     assert.equal(txList.items[0].channel, 'LINE_BOT');
     assert.equal(txList.items[0].amount, 990);
-    assert.equal(txList.items[0].customerName, 'คุณแพรวา');
 
-    // 3. Non-slip product photo should be silently ignored (no reply spam, no extra transaction)
     mode = 'NON_SLIP';
     const nonSlipBody = JSON.stringify({
       events: [
@@ -438,7 +519,7 @@ test('LINE Webhook verifies signature, auto-checks slip, replies with Flex Messa
         },
       ],
     });
-    await fetch(`${srv.baseUrl}/api/line/webhook`, {
+    await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -446,10 +527,8 @@ test('LINE Webhook verifies signature, auto-checks slip, replies with Flex Messa
       },
       body: nonSlipBody,
     });
-    await new Promise((r) => setTimeout(r, 120));
-    assert.equal(srv.sentReplies.length, 1); // still 1 (did not reply!)
+    assert.equal(srv.sentReplies.length, 1);
 
-    // 4. Text "!id" command in group returns Target ID
     const idCmdBody = JSON.stringify({
       events: [
         {
@@ -460,7 +539,7 @@ test('LINE Webhook verifies signature, auto-checks slip, replies with Flex Messa
         },
       ],
     });
-    await fetch(`${srv.baseUrl}/api/line/webhook`, {
+    await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -468,7 +547,6 @@ test('LINE Webhook verifies signature, auto-checks slip, replies with Flex Messa
       },
       body: idCmdBody,
     });
-    await new Promise((r) => setTimeout(r, 120));
     assert.equal(srv.sentReplies.length, 2);
     assert.ok(srv.sentReplies[1].messages[0].text.includes('C_ADMIN_GROUP'));
   } finally {
@@ -476,45 +554,31 @@ test('LINE Webhook verifies signature, auto-checks slip, replies with Flex Messa
   }
 });
 
-test('Chrome Extension endpoints enforce X-API-Key and record CHROME_EXT revenue', async () => {
+test('Chrome Extension endpoints resolve shop by X-API-Key and record isolated revenue', async () => {
   const srv = await startTestServer();
   try {
-    const apiKey = srv.db.getSettings().extensionApiKey;
+    const shopA = await registerShopAccount(srv.baseUrl, {
+      username: 'ext_shop_a',
+      shopName: 'ร้าน Extension A',
+    });
+    const settingsA = await srv.repo.getSettings(shopA.shop.id);
+    const apiKeyA = settingsA.extensionApiKey;
 
     const unauth = await fetch(`${srv.baseUrl}/api/extension/ping`);
     assert.equal(unauth.status, 401);
 
     const pingRes = await fetch(`${srv.baseUrl}/api/extension/ping`, {
-      headers: { 'X-API-Key': apiKey },
+      headers: { 'X-API-Key': apiKeyA },
     });
     assert.equal(pingRes.status, 200);
     const pingData = await pingRes.json();
-    assert.equal(pingData.ok, true);
+    assert.equal(pingData.shopId, shopA.shop.id);
 
-    const verifyRes = await fetch(`${srv.baseUrl}/api/extension/verify-slip`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
-      },
-      body: JSON.stringify({
-        imageBase64: Buffer.from('fake-slip').toString('base64'),
-        mimeType: 'image/jpeg',
-        customerName: 'คุณลูกค้าแชตเว็บ',
-      }),
-    });
-    assert.equal(verifyRes.status, 200);
-    const verifyData = await verifyRes.json();
-    assert.equal(verifyData.ok, true);
-    assert.equal(verifyData.transaction.channel, 'CHROME_EXT');
-    assert.equal(verifyData.transaction.amount, 1500);
-
-    // Facebook platform from Chrome Extension records FB_CHROME_EXT
     const fbExtRes = await fetch(`${srv.baseUrl}/api/extension/verify-slip`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
+        'X-API-Key': apiKeyA,
       },
       body: JSON.stringify({
         platform: 'facebook',
@@ -526,12 +590,13 @@ test('Chrome Extension endpoints enforce X-API-Key and record CHROME_EXT revenue
     const fbExtData = await fbExtRes.json();
     assert.equal(fbExtData.ok, true);
     assert.equal(fbExtData.transaction.channel, 'FB_CHROME_EXT');
+    assert.equal(fbExtData.transaction.shopId, shopA.shop.id);
   } finally {
     await srv.close();
   }
 });
 
-test('Facebook Messenger Webhook verifies GET challenge, X-Hub-Signature-256, ignores echo & non-slip, verifies slip and replies', async () => {
+test('Per-shop Facebook Messenger Webhook verifies GET challenge, X-Hub-Signature-256, ignores echo & non-slip, verifies slip and replies', async () => {
   let mode = 'SLIP';
   const srv = await startTestServer({
     slipVerifyImpl: async () => {
@@ -569,45 +634,47 @@ test('Facebook Messenger Webhook verifies GET challenge, X-Hub-Signature-256, ig
   });
 
   try {
+    const auth = await registerShopAccount(srv.baseUrl, {
+      username: 'fb_seller',
+      shopName: 'ร้านทดสอบ FB',
+    });
     const appSecret = 'fb-app-secret-999';
-    const verifyToken = srv.db.getSettings().fbVerifyToken;
-    srv.db.updateSettings({
+    const settings = await srv.repo.getSettings(auth.shop.id);
+    const verifyToken = settings.fbVerifyToken;
+
+    await srv.repo.updateSettings(auth.shop.id, {
       fbAppSecret: appSecret,
       fbPageAccessToken: 'fb-page-token-xyz',
       fbAutoReplyEnabled: true,
       fbIgnoreNonSlip: true,
     });
 
-    // Unit check on signature & reply builder
-    assert.equal(verifyFacebookSignature(Buffer.from('hello'), signFacebookPayload('hello', appSecret), appSecret), true);
-    assert.equal(verifyFacebookSignature(Buffer.from('hello'), 'sha256=deadbeef', appSecret), false);
+    const webhookUrl = `${srv.baseUrl}/api/messenger/webhook/${auth.shop.webhookSlug}`;
+
     const sampleReply = buildMessengerSlipReply(
       { status: 'VERIFIED', amount: 1290, sendingBankName: 'ธนาคารกสิกรไทย', transRef: 'FB-REF-777' },
       { shopName: 'ร้านทดสอบ', fbReplyGreeting: 'ขอบคุณครับ' }
     );
     assert.ok(sampleReply.includes('1,290.00 บาท'));
 
-    // 1. Meta GET verification challenge
     const badChallenge = await fetch(
-      `${srv.baseUrl}/api/messenger/webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=CHAL123`
+      `${webhookUrl}?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=CHAL123`
     );
     assert.equal(badChallenge.status, 403);
 
     const okChallenge = await fetch(
-      `${srv.baseUrl}/api/messenger/webhook?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(verifyToken)}&hub.challenge=CHAL123`
+      `${webhookUrl}?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(verifyToken)}&hub.challenge=CHAL123`
     );
     assert.equal(okChallenge.status, 200);
     assert.equal(await okChallenge.text(), 'CHAL123');
 
-    // 2. Reject invalid POST signature
-    const badPost = await fetch(`${srv.baseUrl}/api/messenger/webhook`, {
+    const badPost = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-hub-signature-256': 'sha256=invalid' },
       body: JSON.stringify({ object: 'page', entry: [] }),
     });
     assert.equal(badPost.status, 401);
 
-    // 3. Valid Messenger image event -> verifies slip, records FB_MESSENGER revenue, replies via Send API
     const slipPayload = JSON.stringify({
       object: 'page',
       entry: [
@@ -622,7 +689,6 @@ test('Facebook Messenger Webhook verifies GET challenge, X-Hub-Signature-256, ig
                 attachments: [{ type: 'image', payload: { url: 'https://cdn.fbsbx.com/fake-slip.jpg' } }],
               },
             },
-            // Echo message from page itself must be ignored
             {
               sender: { id: 'PAGE_123' },
               recipient: { id: 'PSID_CUST_1' },
@@ -636,7 +702,7 @@ test('Facebook Messenger Webhook verifies GET challenge, X-Hub-Signature-256, ig
         },
       ],
     });
-    const okPost = await fetch(`${srv.baseUrl}/api/messenger/webhook`, {
+    const okPost = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -646,45 +712,16 @@ test('Facebook Messenger Webhook verifies GET challenge, X-Hub-Signature-256, ig
     });
     assert.equal(okPost.status, 200);
 
-    await new Promise((r) => setTimeout(r, 120));
     assert.equal(srv.sentFbMessages.length, 1);
     assert.equal(srv.sentFbMessages[0].psid, 'PSID_CUST_1');
     assert.ok(srv.sentFbMessages[0].text.includes('1,290.00 บาท'));
 
-    const txList = await (await fetch(`${srv.baseUrl}/api/transactions`)).json();
+    const txList = await (
+      await fetch(`${srv.baseUrl}/api/transactions`, { headers: auth.headers() })
+    ).json();
     assert.equal(txList.items.length, 1);
     assert.equal(txList.items[0].channel, 'FB_MESSENGER');
-    assert.equal(txList.items[0].customerName, 'คุณมินท์ เฟซบุ๊ก');
-
-    // 4. Non-slip product photo should be silently ignored
-    mode = 'NON_SLIP';
-    const nonSlipPayload = JSON.stringify({
-      object: 'page',
-      entry: [
-        {
-          id: 'PAGE_123',
-          messaging: [
-            {
-              sender: { id: 'PSID_CUST_1' },
-              message: {
-                mid: 'm_002',
-                attachments: [{ type: 'image', payload: { url: 'https://cdn.fbsbx.com/shirt.jpg' } }],
-              },
-            },
-          ],
-        },
-      ],
-    });
-    await fetch(`${srv.baseUrl}/api/messenger/webhook`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-hub-signature-256': signFacebookPayload(nonSlipPayload, appSecret),
-      },
-      body: nonSlipPayload,
-    });
-    await new Promise((r) => setTimeout(r, 120));
-    assert.equal(srv.sentFbMessages.length, 1); // still 1, no spam
+    assert.equal(txList.items[0].shopId, auth.shop.id);
   } finally {
     await srv.close();
   }

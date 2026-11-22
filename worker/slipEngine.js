@@ -111,6 +111,7 @@ export async function callSlipReaderApi({
 
 export async function verifyAndRecordSlipWorker({
   repo,
+  shopId,
   blob,
   filename = 'slip.jpg',
   qrPayload = '',
@@ -124,10 +125,11 @@ export async function verifyAndRecordSlipWorker({
   orderNote = '',
   skipSaveIfNonSlip = false,
   timeoutMs = 65000,
+  mockSlipVerify = null,
 }) {
   const [settings, sellerAccounts] = await Promise.all([
-    repo.getSettings(),
-    repo.listSellerAccounts(),
+    repo.getSettings(shopId),
+    repo.listSellerAccounts(shopId),
   ]);
 
   const sourceMap = {
@@ -140,14 +142,16 @@ export async function verifyAndRecordSlipWorker({
     DASHBOARD: 'dashboard',
   };
 
-  const remote = await callSlipReaderApi({
-    blob,
-    filename,
-    qrPayload,
-    source: sourceMap[channel] || 'api',
-    baseUrl: settings.slipApiBaseUrl,
-    timeoutMs,
-  });
+  const remote = mockSlipVerify
+    ? await mockSlipVerify({ blob, filename, qrPayload, source: sourceMap[channel] || 'api' })
+    : await callSlipReaderApi({
+        blob,
+        filename,
+        qrPayload,
+        source: sourceMap[channel] || 'api',
+        baseUrl: settings.slipApiBaseUrl,
+        timeoutMs,
+      });
 
   if (!remote.ok || !remote.payload) {
     return {
@@ -183,7 +187,7 @@ export async function verifyAndRecordSlipWorker({
   const ocrLines = Array.isArray(d.ocrExtractedLines) ? d.ocrExtractedLines : [];
   const tlvBreakdown = Array.isArray(d.tlvBreakdown) ? d.tlvBreakdown : [];
 
-  const existingLocalDuplicate = transRef ? await repo.findVerifiedByTransRef(transRef) : null;
+  const existingLocalDuplicate = transRef ? await repo.findVerifiedByTransRef(shopId, transRef) : null;
   const isRemoteDuplicate = !payload.success && detectRemoteDuplicate(payload);
 
   const receiverCheck = settings.checkReceiverAccount
@@ -249,7 +253,7 @@ export async function verifyAndRecordSlipWorker({
   }
 
   const now = getBangkokIsoNow();
-  const tx = await repo.createTransaction({
+  const tx = await repo.createTransaction(shopId, {
     transRef,
     status,
     channel,
